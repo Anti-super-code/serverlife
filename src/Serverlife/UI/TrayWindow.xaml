@@ -1,0 +1,169 @@
+<Window x:Class="Serverlife.UI.TrayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Serverlife.UI"
+        xmlns:vm="clr-namespace:Serverlife.ViewModels"
+        Title="Serverlife"
+        Width="380" Height="440" MinHeight="220"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="CanResize"
+        ShowInTaskbar="True"
+        AllowDrop="True"
+        FontFamily="{StaticResource AppFont}"
+        FontWeight="Light"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        WindowStartupLocation="Manual">
+
+    <Window.Resources>
+        <local:StateToBrushConverter x:Key="StateBrush"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <!-- 12px of margin rather than Photokompressor's 18: the shadow still has room to
+         fall, but the panel keeps more of the window. -->
+    <Border Margin="12" CornerRadius="16" Background="{StaticResource TrayBg}"
+            MouseLeftButtonDown="OnChromeDrag">
+        <Border.Effect>
+            <DropShadowEffect Color="#243044" Direction="270" ShadowDepth="6" BlurRadius="20" Opacity="0.22"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- header -->
+            <Grid Grid.Row="0" Margin="14,10,14,6" Background="Transparent" MouseLeftButtonDown="OnChromeDrag">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="SERVERLIFE" Style="{StaticResource SectionLabel}" IsHitTestVisible="False"/>
+                    <TextBlock Text="{Binding Summary}" FontSize="10.5"
+                               Foreground="{StaticResource TextLo}" IsHitTestVisible="False"/>
+                </StackPanel>
+                <Button Style="{StaticResource TrayCloseButton}"
+                        Width="28" Height="28" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        ToolTip="Hide to tray" Click="OnCloseClicked"/>
+            </Grid>
+
+            <!-- filter -->
+            <local:SegmentTrack Grid.Row="1" Margin="14,0,14,8" Style="{StaticResource SegmentTrackStyle}">
+                <UniformGrid Rows="1">
+                    <RadioButton Content="All" Style="{StaticResource Segment}" IsChecked="True"
+                                 Checked="OnFilterChecked" Tag="All"/>
+                    <RadioButton Content="Running" Style="{StaticResource Segment}"
+                                 Checked="OnFilterChecked" Tag="Running"/>
+                    <RadioButton Content="Managed" Style="{StaticResource Segment}"
+                                 Checked="OnFilterChecked" Tag="Managed"/>
+                </UniformGrid>
+            </local:SegmentTrack>
+
+            <!-- rows -->
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,4">
+                <ScrollViewer.Resources>
+                    <Style TargetType="ScrollBar" BasedOn="{StaticResource SlimScrollBar}"/>
+                </ScrollViewer.Resources>
+                <ItemsControl ItemsSource="{Binding Rows}" Margin="8,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:ServerRowItem}">
+                            <!-- 30px, one line. The folder and command line live in the
+                                 tooltip so every row costs exactly one line. -->
+                            <Border x:Name="row" Height="30" CornerRadius="8" Margin="0,0,0,2"
+                                    Background="Transparent" ToolTip="{Binding Tooltip}">
+                                <!-- Two layers, not two columns. The actions are an overlay
+                                     so they reserve no width at rest: as sibling columns
+                                     they would hold their full size at Opacity 0 and cut
+                                     every title short by their width. -->
+                                <Grid Margin="6,0,4,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- 7px dot replaces Photokompressor's 52px thumbnail;
+                                             colour alone carries the state. -->
+                                        <Ellipse Grid.Column="0" Width="7" Height="7"
+                                                 HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                 Fill="{Binding State, Converter={StaticResource StateBrush}}"/>
+
+                                        <TextBlock Grid.Column="1" Text="{Binding Port}" FontSize="11.5"
+                                                   MinWidth="38" Margin="0,0,8,0"
+                                                   Foreground="{StaticResource TextMid}" VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Column="2" Text="{Binding DisplayName}" FontSize="12.5"
+                                                   Foreground="{StaticResource TextHi}" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <!-- Contested ports are the finding this app exists to
+                                             surface, so the badge shows at rest, not on hover. -->
+                                        <Border Grid.Column="3" CornerRadius="7" Height="15" Padding="6,0"
+                                                Margin="6,0,0,0" VerticalAlignment="Center"
+                                                Background="{StaticResource Warn}"
+                                                ToolTip="Other unrelated processes are bound to this port"
+                                                Visibility="{Binding IsContested, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding PeersOnPort, StringFormat=+{0}}"
+                                                       FontSize="9.5" FontWeight="SemiBold" Foreground="White"
+                                                       VerticalAlignment="Center"/>
+                                        </Border>
+                                    </Grid>
+
+                                    <!-- Opaque, because it sits over the title text it hides.
+                                         The colour is TrayBg composited with the row's own
+                                         hover wash, so the overlay is invisible as a shape. -->
+                                    <Border x:Name="actions" HorizontalAlignment="Right"
+                                            VerticalAlignment="Stretch" CornerRadius="8"
+                                            Background="#E5E9F0" Opacity="0" Padding="12,0,4,0">
+                                      <StackPanel Orientation="Horizontal">
+                                        <Button Content="Open" Style="{StaticResource LinkButton}" FontSize="11"
+                                                Margin="0,0,10,0" VerticalAlignment="Center"
+                                                ToolTip="Open in browser"
+                                                Command="{Binding DataContext.OpenCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="Copy" Style="{StaticResource LinkButton}" FontSize="11"
+                                                Margin="0,0,10,0" VerticalAlignment="Center"
+                                                ToolTip="Copy URL"
+                                                Command="{Binding DataContext.CopyUrlCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="Folder" Style="{StaticResource LinkButton}" FontSize="11"
+                                                VerticalAlignment="Center" ToolTip="Show in Explorer"
+                                                Command="{Binding DataContext.RevealFolderCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                      </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <DataTemplate.Triggers>
+                                <!-- Actions appear only on the hovered row, so at rest the
+                                     list is information and not a grid of buttons. -->
+                                <Trigger SourceName="row" Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="row" Property="Background" Value="#66FFFFFF"/>
+                                    <Setter TargetName="actions" Property="Opacity" Value="1"/>
+                                </Trigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- drop hint -->
+            <Border Grid.Row="3" x:Name="DropHint" Margin="14,0,14,12" Height="34" CornerRadius="10"
+                    Background="{StaticResource Sunken}" BorderThickness="1"
+                    BorderBrush="{StaticResource InsetEdge}">
+                <TextBlock x:Name="DropHintText" Text="Drop a folder here to serve it"
+                           FontSize="11" Foreground="{StaticResource TextLo}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

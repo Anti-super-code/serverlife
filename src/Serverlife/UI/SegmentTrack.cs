@@ -16,7 +16,7 @@ public class SegmentTrack : ContentControl
 {
     private const string PillPart = "PART_Pill";
     private const string ClipPart = "PART_Clip";
-    private const double TrackCornerRadius = 15;
+    private const double TrackCornerRadius = 9;
     private static readonly Duration SlideDuration = new(TimeSpan.FromMilliseconds(380));
 
     private FrameworkElement? _pill;

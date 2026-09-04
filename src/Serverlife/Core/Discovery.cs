@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -85,11 +86,20 @@ public sealed class Discovery : IDisposable
     private const int SystemPid = 4;
 
     /// <summary>
+    /// How many ports to probe at once. A cold start faces every listening port on the
+    /// machine, and each miss costs up to 1.6s (an http attempt then an https one), so
+    /// probing serially would leave the window empty for the best part of a minute.
+    /// Concurrent, that becomes about two seconds.
+    /// </summary>
+    private const int ProbeConcurrency = 16;
+
+    /// <summary>
     /// Probe results keyed by port AND pid, so a port reused by a different process is
     /// re-probed rather than inheriting the old title. Without the pid in the key,
     /// restarting a server on the same port would keep showing its previous page.
+    /// Concurrent because probes run in parallel.
     /// </summary>
-    private readonly Dictionary<(int Port, int Pid), ProbeResult> _probeCache = new();
+    private readonly ConcurrentDictionary<(int Port, int Pid), ProbeResult> _probeCache = new();
 
     private readonly CancellationTokenSource _cts = new();
     private readonly int _ownPid = Environment.ProcessId;
@@ -141,26 +151,31 @@ public sealed class Discovery : IDisposable
         var details = ProcessInspector.Describe(unique.Select(l => l.Pid).Distinct().ToList());
         DescribeSharedParents(unique, details);
 
+        // Resolve every port's owners first, so the probes can then all be issued at once
+        // rather than one port at a time.
+        var ports = unique
+            .GroupBy(l => l.Port)
+            .Select(g => (Port: g.Key, Address: g.First().Address, Owners: ResolveOwners(g.ToList(), details)))
+            .ToList();
+
+        // One probe per port, shared by every row on it: contested processes are fighting
+        // over a single socket, so they necessarily serve the same response.
+        await Task.WhenAll(Partition(ports, ProbeConcurrency)
+            .Select(batch => ProbeBatchAsync(batch, token)))
+            .ConfigureAwait(false);
+
         var servers = new List<DetectedServer>();
-        foreach (var samePort in unique.GroupBy(l => l.Port))
+        foreach (var (port, address, owners) in ports)
         {
-            token.ThrowIfCancellationRequested();
-
-            var group = samePort.ToList();
-            var owners = ResolveOwners(group, details);
-
-            // One probe for the port, shared by every row on it: the processes are
-            // fighting over one socket, so they necessarily serve the same response.
-            var probe = await ProbeCachedAsync(samePort.Key, owners[0], token).ConfigureAwait(false);
-
+            var probe = _probeCache.GetValueOrDefault((port, owners[0]), ProbeResult.NotHttp);
             foreach (var pid in owners)
             {
                 details.TryGetValue(pid, out var info);
                 servers.Add(new DetectedServer(
-                    Port: samePort.Key,
+                    Port: port,
                     Pid: pid,
                     ParentPid: info?.ParentPid ?? 0,
-                    Address: group[0].Address,
+                    Address: address,
                     ProcessName: info?.Name ?? "unknown",
                     CommandLine: info?.CommandLine,
                     WorkingDirectory: info?.WorkingDirectory,
@@ -169,7 +184,7 @@ public sealed class Discovery : IDisposable
             }
         }
 
-        PruneCache(unique);
+        PruneCache(ports.Select(p => (p.Port, p.Owners[0])).ToHashSet());
         return servers.OrderBy(s => s.Port).ToList();
     }
 
@@ -247,24 +262,41 @@ public sealed class Discovery : IDisposable
         return pids.OrderBy(p => p).ToList();
     }
 
-    private async Task<ProbeResult> ProbeCachedAsync(int port, int pid, CancellationToken token)
-    {
-        if (_probeCache.TryGetValue((port, pid), out var cached))
-            return cached;
+    /// <summary>
+    /// Splits the work into <paramref name="lanes"/> round-robin slices, each of which is
+    /// then walked serially. Round-robin rather than contiguous chunks so one slow stretch
+    /// of adjacent ports cannot land entirely in a single lane.
+    /// </summary>
+    private static IEnumerable<List<T>> Partition<T>(IReadOnlyList<T> items, int lanes) =>
+        Enumerable.Range(0, Math.Min(lanes, Math.Max(items.Count, 1)))
+            .Select(lane => items.Where((_, i) => i % lanes == lane).ToList())
+            .Where(batch => batch.Count > 0);
 
-        var result = await HttpProbe.ProbeAsync(port, token).ConfigureAwait(false);
-        _probeCache[(port, pid)] = result;
-        return result;
+    private async Task ProbeBatchAsync(
+        List<(int Port, IPAddress Address, List<int> Owners)> batch, CancellationToken token)
+    {
+        foreach (var (port, _, owners) in batch)
+        {
+            var key = (port, owners[0]);
+            if (_probeCache.ContainsKey(key))
+                continue;
+            _probeCache[key] = await HttpProbe.ProbeAsync(port, token).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Drops cache entries for sockets that have gone, so it cannot grow without bound.</summary>
-    private void PruneCache(List<Listener> live)
+    /// <summary>
+    /// Drops entries for sockets that have gone, so the cache cannot grow without bound.
+    /// Keyed on the same (port, owner) pairs the probes used — pruning against the raw
+    /// listener list instead would evict every shared-parent entry on each poll and
+    /// re-probe those ports forever.
+    /// </summary>
+    private void PruneCache(HashSet<(int Port, int Pid)> live)
     {
         if (_probeCache.Count <= live.Count)
             return;
-        var alive = live.Select(l => (l.Port, l.Pid)).ToHashSet();
-        foreach (var key in _probeCache.Keys.Where(k => !alive.Contains(k)).ToList())
-            _probeCache.Remove(key);
+        foreach (var key in _probeCache.Keys.Where(k => !live.Contains(k)).ToList())
+            _probeCache.TryRemove(key, out _);
     }
 
     public void Dispose()

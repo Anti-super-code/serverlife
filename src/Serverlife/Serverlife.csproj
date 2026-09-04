@@ -11,6 +11,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\serverlife.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- These fill the exe's Properties -> Details pane. Left blank they read as
          suspicious for an unsigned download, and SmartScreen has no publisher to name. -->
@@ -32,6 +33,8 @@
   <ItemGroup>
     <!-- Embedded UI font: dropping other .ttf files here picks them up automatically. -->
     <Resource Include="Assets\Fonts\*.ttf"/>
+    <!-- Multi-size so the notification area can pick the one it wants at this DPI. -->
+    <Resource Include="Assets\serverlife.ico"/>
   </ItemGroup>
 
   <ItemGroup>
