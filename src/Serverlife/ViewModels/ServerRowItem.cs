@@ -39,6 +39,9 @@ public sealed partial class ServerRowItem : ObservableObject
         WorkingDirectory = managed.Directory;
         CommandLine = managed.Command;
         Port = managed.Port ?? 0;
+        // You dropped or adopted this one yourself, so it's yours by definition —
+        // regardless of what OriginClassifier would make of its folder.
+        Origin = ServerOrigin.Mine;
         SyncFromManaged();
     }
 
@@ -55,6 +58,7 @@ public sealed partial class ServerRowItem : ObservableObject
     [ObservableProperty] private bool _isAdoptable;
     [ObservableProperty] private int _peersOnPort;
     [ObservableProperty] private int _restartCount;
+    [ObservableProperty] private ServerOrigin _origin = ServerOrigin.Unknown;
 
     /// <summary>The supervisor's record, when this row is managed. Null for external servers.</summary>
     internal ManagedServer? Managed { get; set; }
@@ -63,6 +67,9 @@ public sealed partial class ServerRowItem : ObservableObject
     internal DetectedServer? Detected { get; private set; }
 
     public bool IsContested => PeersOnPort > 0;
+
+    /// <summary>Running out of an OS or installed-application folder — not one of your projects.</summary>
+    public bool IsSystem => Origin == ServerOrigin.System;
 
     /// <summary>Only an external server with a readable command and folder can be adopted.</summary>
     public bool CanManage => Managed is null && IsAdoptable;
@@ -89,6 +96,8 @@ public sealed partial class ServerRowItem : ObservableObject
                           "Only the last one to bind is serving.");
             else if (Managed is null && !IsAdoptable)
                 lines.Add("Cannot be restarted: no readable command line or working directory.");
+            if (IsSystem)
+                lines.Add("Looks like it belongs to an installed app or the OS, not one of your projects.");
             return string.Join("\n", lines);
         }
     }
@@ -112,6 +121,7 @@ public sealed partial class ServerRowItem : ObservableObject
             WorkingDirectory = server.WorkingDirectory;
             CommandLine = server.CommandLine;
             State = ServerState.Running;
+            Origin = server.Origin;
         }
 
         Notify();
@@ -143,6 +153,7 @@ public sealed partial class ServerRowItem : ObservableObject
     private void Notify()
     {
         OnPropertyChanged(nameof(IsContested));
+        OnPropertyChanged(nameof(IsSystem));
         OnPropertyChanged(nameof(CanManage));
         OnPropertyChanged(nameof(Tooltip));
     }

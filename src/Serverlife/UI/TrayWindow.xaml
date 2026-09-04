@@ -21,8 +21,47 @@
     <Window.Resources>
         <local:StateToBrushConverter x:Key="StateBrush"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- A lub-dub-rest cycle rather than a plain pulse: two quick beats close
+             together, then a longer rest, the way an actual heartbeat reads. Duplicated
+             across ScaleX/ScaleY because WPF has no single animatable "scale" property. -->
+        <Storyboard x:Key="HeartbeatStoryboard" RepeatBehavior="Forever">
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="HeartScale" Storyboard.TargetProperty="ScaleX">
+                <LinearDoubleKeyFrame KeyTime="0:0:0.00" Value="1.0"/>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.09" Value="1.22">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseOut"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.18" Value="1.0">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseIn"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.28" Value="1.14">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseOut"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.40" Value="1.0">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseIn"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:1.05" Value="1.0"/>
+            </DoubleAnimationUsingKeyFrames>
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetName="HeartScale" Storyboard.TargetProperty="ScaleY">
+                <LinearDoubleKeyFrame KeyTime="0:0:0.00" Value="1.0"/>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.09" Value="1.22">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseOut"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.18" Value="1.0">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseIn"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.28" Value="1.14">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseOut"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <EasingDoubleKeyFrame KeyTime="0:0:0.40" Value="1.0">
+                    <EasingDoubleKeyFrame.EasingFunction><QuadraticEase EasingMode="EaseIn"/></EasingDoubleKeyFrame.EasingFunction>
+                </EasingDoubleKeyFrame>
+                <LinearDoubleKeyFrame KeyTime="0:0:1.05" Value="1.0"/>
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
     </Window.Resources>
 
+    <Grid>
     <!-- 12px of margin rather than Photokompressor's 18: the shadow still has room to
          fall, but the panel keeps more of the window. -->
     <Border Margin="12" CornerRadius="16" Background="{StaticResource TrayBg}"
@@ -40,21 +79,28 @@
             </Grid.RowDefinitions>
 
             <!-- header -->
-            <Grid Grid.Row="0" Margin="14,10,14,6" Background="Transparent" MouseLeftButtonDown="OnChromeDrag">
+            <Grid x:Name="HeaderRow" Grid.Row="0" Margin="14,10,14,6" Background="Transparent" MouseLeftButtonDown="OnChromeDrag">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="SERVERLIFE" Style="{StaticResource SectionLabel}" IsHitTestVisible="False"/>
                     <TextBlock Text="{Binding Summary}" FontSize="10.5"
                                Foreground="{StaticResource TextLo}" IsHitTestVisible="False"/>
                 </StackPanel>
-                <Button Style="{StaticResource TrayCloseButton}"
-                        Width="28" Height="28" HorizontalAlignment="Right" VerticalAlignment="Center"
-                        ToolTip="Hide to tray" Click="OnCloseClicked"/>
+                <StackPanel x:Name="HeaderButtons" Orientation="Horizontal"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Style="{StaticResource InfoButton}" Width="28" Height="28" Margin="0,0,6,0"
+                            ToolTip="About Serverlife &amp; settings" Click="OnInfoClicked"/>
+                    <Button Style="{StaticResource TrayCloseButton}" Width="28" Height="28"
+                            ToolTip="Hide to tray" Click="OnCloseClicked"/>
+                </StackPanel>
             </Grid>
 
             <!-- filter -->
             <local:SegmentTrack Grid.Row="1" Margin="14,0,14,8" Style="{StaticResource SegmentTrackStyle}">
                 <UniformGrid Rows="1">
-                    <RadioButton Content="All" Style="{StaticResource Segment}" IsChecked="True"
+                    <RadioButton Content="Mine" Style="{StaticResource Segment}" IsChecked="True"
+                                 ToolTip="Hides anything that looks like it belongs to the OS or an installed app"
+                                 Checked="OnFilterChecked" Tag="Mine"/>
+                    <RadioButton Content="All" Style="{StaticResource Segment}"
                                  Checked="OnFilterChecked" Tag="All"/>
                     <RadioButton Content="Running" Style="{StaticResource Segment}"
                                  Checked="OnFilterChecked" Tag="Running"/>
@@ -103,16 +149,24 @@
                                                    TextTrimming="CharacterEllipsis"/>
 
                                         <!-- Contested ports are the finding this app exists to
-                                             surface, so the badge shows at rest, not on hover. -->
-                                        <Border Grid.Column="3" CornerRadius="7" Height="15" Padding="6,0"
-                                                Margin="6,0,0,0" VerticalAlignment="Center"
-                                                Background="{StaticResource Warn}"
-                                                ToolTip="Other unrelated processes are bound to this port"
-                                                Visibility="{Binding IsContested, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock Text="{Binding PeersOnPort, StringFormat=+{0}}"
-                                                       FontSize="9.5" FontWeight="SemiBold" Foreground="White"
-                                                       VerticalAlignment="Center"/>
-                                        </Border>
+                                             surface, so the badges show at rest, not on hover. -->
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                                    Margin="6,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="system" FontSize="9.5" Margin="0,0,6,0"
+                                                       Foreground="{StaticResource TextLo}"
+                                                       VerticalAlignment="Center"
+                                                       ToolTip="Looks like it belongs to an installed app or the OS, not one of your projects"
+                                                       Visibility="{Binding IsSystem, Converter={StaticResource BoolToVis}}"/>
+                                            <Border CornerRadius="7" Height="15" Padding="6,0"
+                                                    VerticalAlignment="Center"
+                                                    Background="{StaticResource Warn}"
+                                                    ToolTip="Other unrelated processes are bound to this port"
+                                                    Visibility="{Binding IsContested, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="{Binding PeersOnPort, StringFormat=+{0}}"
+                                                           FontSize="9.5" FontWeight="SemiBold" Foreground="White"
+                                                           VerticalAlignment="Center"/>
+                                            </Border>
+                                        </StackPanel>
                                     </Grid>
 
                                     <!-- Opaque, because it sits over the title text it hides.
@@ -225,6 +279,116 @@
                     </StackPanel>
                 </Border>
             </Grid>
+
+            <!-- ===== about & settings — covers filter, list and footer; the header title
+                 stays put, but its cog/hide-to-tray hide (see HeaderButtons above) since
+                 "Server pamper" below is now the only way out, same as Esc. ===== -->
+            <Grid x:Name="InfoPanel" Grid.Row="1" Grid.RowSpan="3" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Grid.Background paints a flat rectangle - it has no CornerRadius of its
+                     own - so a plain Background here squared off the card's rounded bottom
+                     corners. Only the bottom needs rounding; the top edge sits mid-card. -->
+                <Border Grid.RowSpan="2" CornerRadius="0,0,16,16" Background="{StaticResource TrayBg}"/>
+
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer.Resources>
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource SlimScrollBar}"/>
+                    </ScrollViewer.Resources>
+                    <StackPanel Margin="20,16,20,18" HorizontalAlignment="Center">
+                        <TextBlock Text="Keeps your servers alive" FontSize="17" FontWeight="Light"
+                                   Foreground="{StaticResource TextHi}" HorizontalAlignment="Center"
+                                   TextWrapping="Wrap" TextAlignment="Center" Width="300"/>
+
+                        <!-- Same geometric heart as Photokompressor — a square stood on its
+                             corner plus two circles matching its upper edges — but this one
+                             beats: HeartScale is driven by HeartbeatStoryboard above. -->
+                        <Viewbox Width="50" Height="46" Margin="0,8,0,10">
+                            <Canvas Width="100" Height="92" RenderTransformOrigin="0.5,0.5">
+                                <Canvas.RenderTransform>
+                                    <ScaleTransform x:Name="HeartScale" ScaleX="1" ScaleY="1"/>
+                                </Canvas.RenderTransform>
+                                <Rectangle Canvas.Left="22" Canvas.Top="22" Width="56" Height="56"
+                                           Fill="{StaticResource Danger}">
+                                    <Rectangle.RenderTransform>
+                                        <RotateTransform Angle="45" CenterX="28" CenterY="28"/>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                                <Ellipse Canvas.Left="2.2" Canvas.Top="2.2" Width="56" Height="56"
+                                         Fill="{StaticResource Danger}"/>
+                                <Ellipse Canvas.Left="41.8" Canvas.Top="2.2" Width="56" Height="56"
+                                         Fill="{StaticResource Danger}"/>
+                            </Canvas>
+                        </Viewbox>
+
+                        <TextBlock Text="OPEN SOURCE" Style="{StaticResource SectionLabel}"
+                                   HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                        <TextBlock Width="300" FontSize="12" LineHeight="18" TextAlignment="Center"
+                                   TextWrapping="Wrap" Foreground="{StaticResource TextMid}"
+                                   Text="Free and open source under the MIT licence. Serverlife only looks at your own machine — the ports it's listening on and the processes behind them — and never sends anything anywhere."/>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
+                            <Button Content="View the source" Style="{StaticResource LinkButton}"
+                                    Click="OnSourceClicked"/>
+                        </StackPanel>
+
+                        <TextBlock Width="300" FontSize="11" LineHeight="16" TextAlignment="Center"
+                                   TextWrapping="Wrap" Foreground="{StaticResource TextLo}" Margin="0,12,0,0"
+                                   Text="Provided as is, without warranty. The Mine filter and the system tag are best-effort guesses from where a server runs — glance at a row before you stop it."/>
+
+                        <Button Content="Made by antidot.gr" Style="{StaticResource LinkButton}"
+                                HorizontalAlignment="Center" Margin="0,10,0,0" Click="OnMadeByClicked"/>
+
+                        <!-- App-level preferences, persisted immediately as they're toggled. -->
+                        <Border Style="{StaticResource SunkenPanel}" Padding="14,10" Width="300" Margin="0,20,0,0">
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,50,0">
+                                    <TextBlock Text="Always on top" Style="{StaticResource RowLabel}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Keep the panel above other windows while it's open" FontSize="10.5"
+                                               Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextLo}"/>
+                                </StackPanel>
+                                <CheckBox x:Name="AlwaysOnTopCheck" Style="{StaticResource Switch}"
+                                          HorizontalAlignment="Right" VerticalAlignment="Center"
+                                          Checked="OnAlwaysOnTopToggled" Unchecked="OnAlwaysOnTopToggled"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource SunkenPanel}" Padding="14,10" Width="300" Margin="0,10,0,0">
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,50,0">
+                                    <TextBlock Text="Right-click menu" Style="{StaticResource RowLabel}" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="ShellHint" FontSize="10.5" Margin="0,2,0,0"
+                                               TextWrapping="Wrap" Foreground="{StaticResource TextLo}"/>
+                                </StackPanel>
+                                <CheckBox x:Name="ShellCheck" Style="{StaticResource Switch}"
+                                          HorizontalAlignment="Right" VerticalAlignment="Center"
+                                          Checked="OnShellToggled" Unchecked="OnShellToggled"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Pinned, not scrolled — always reachable without hunting for it. -->
+                <StackPanel Grid.Row="1" Margin="20,0,20,16">
+                    <Button Content="Server pamper" Style="{StaticResource AccentButton}"
+                            Click="OnServerPamperClicked"/>
+                    <TextBlock x:Name="VersionText" FontSize="10.5" HorizontalAlignment="Center"
+                               Foreground="{StaticResource TextLo}" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Grid>
         </Grid>
     </Border>
+
+    <!-- Vertical resize grips. WindowStyle="None" drops the OS's own resize edges along
+         with the rest of the chrome, so these hand off to the same native resize loop a
+         titled window gets — see ResizeFromEdge in the code-behind. They live in the 12px
+         margin above, so there's nothing to draw; the cursor is the only affordance. -->
+    <Border Height="8" VerticalAlignment="Top" Background="Transparent" Cursor="SizeNS"
+            MouseLeftButtonDown="OnResizeTop"/>
+    <Border Height="8" VerticalAlignment="Bottom" Background="Transparent" Cursor="SizeNS"
+            MouseLeftButtonDown="OnResizeBottom"/>
+    </Grid>
 </Window>

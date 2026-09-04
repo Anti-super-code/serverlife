@@ -1,14 +1,16 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serverlife.Core;
 
 namespace Serverlife.ViewModels;
 
-public enum RowFilter { All, Running, Managed }
+public enum RowFilter { All, Mine, Running, Managed }
 
 /// <summary>
 /// Backs the tray window: owns the live row collection, the filter, the pending drop, and
@@ -32,7 +34,12 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ServerRowItem> Rows { get; } = new();
 
-    [ObservableProperty] private RowFilter _filter = RowFilter.All;
+    private readonly ICollectionView _rowsView;
+
+    // Defaults to "Mine" rather than "All": the whole point of the origin split is that
+    // an OS or installed-app server shouldn't be sitting in easy reach of Stop by default.
+    // "All" is one click away when you actually want to see everything.
+    [ObservableProperty] private RowFilter _filter = RowFilter.Mine;
     [ObservableProperty] private bool _showNonHttp;
     [ObservableProperty] private string _summary = "Looking for servers…";
 
@@ -46,10 +53,31 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
 
     public TrayViewModel()
     {
+        _rowsView = CollectionViewSource.GetDefaultView(Rows);
+        EnableLiveFiltering();
+        ApplyFilter();
+
         _discovery.Updated += OnDiscovered;
         _supervisor.Changed += _ => Application.Current?.Dispatcher.BeginInvoke(RefreshManagedState);
         _discovery.Start();
         _supervisor.Start();
+    }
+
+    /// <summary>
+    /// Without this, every 2s poll's ApplyFilter() -> Refresh() reset the whole
+    /// CollectionView, which WPF answers by tearing down and rebuilding every row's
+    /// container - visible as the list flashing even when nothing about it actually
+    /// changed. Live filtering re-evaluates only the row whose filter-relevant property
+    /// just changed, so membership updates land without touching the rest.
+    /// </summary>
+    private void EnableLiveFiltering()
+    {
+        if (_rowsView is not ICollectionViewLiveShaping liveShaping || !liveShaping.CanChangeLiveFiltering)
+            return;
+        liveShaping.LiveFilteringProperties.Add(nameof(ServerRowItem.Origin));
+        liveShaping.LiveFilteringProperties.Add(nameof(ServerRowItem.State));
+        liveShaping.LiveFilteringProperties.Add(nameof(ServerRowItem.IsManaged));
+        liveShaping.IsLiveFiltering = true;
     }
 
     partial void OnFilterChanged(RowFilter value) => ApplyFilter();
@@ -171,7 +199,9 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
 
         RefreshManagedState();
         Reorder();
-        ApplyFilter();
+        // No ApplyFilter()/Refresh() here: live filtering (set up once in the constructor)
+        // already re-evaluates membership as row properties change, and Rows.Add/Remove
+        // above already carries new/gone rows through the existing filter on its own.
         UpdateSummary();
     }
 
@@ -202,14 +232,18 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
 
     private void ApplyFilter()
     {
-        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(Rows);
-        view.Filter = Filter switch
+        // Assigning Filter already re-evaluates every row on its own; called only when
+        // the filter itself changes (a deliberate click), never from the discovery poll.
+        _rowsView.Filter = Filter switch
         {
+            // Unknown origin (the PEB read failed, or the row is still non-HTTP) is kept
+            // rather than hidden: only a confidently-System row is filtered out here, so
+            // a real dev server never disappears just because its folder couldn't be read.
+            RowFilter.Mine => o => o is ServerRowItem { Origin: not ServerOrigin.System },
             RowFilter.Running => o => o is ServerRowItem { State: ServerState.Running },
             RowFilter.Managed => o => o is ServerRowItem { IsManaged: true },
             _ => null,
         };
-        view.Refresh();
     }
 
     private void UpdateSummary()

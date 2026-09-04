@@ -38,6 +38,9 @@ public sealed record DetectedServer(
 
     public string Url => $"{Probe.Scheme ?? "http"}://localhost:{Port}/";
 
+    /// <summary>Whose server this looks like, judged from where it runs. See <see cref="OriginClassifier"/>.</summary>
+    public ServerOrigin Origin => OriginClassifier.Classify(WorkingDirectory);
+
     private string BareProcessName => Path.GetFileNameWithoutExtension(ProcessName);
 
     /// <summary>

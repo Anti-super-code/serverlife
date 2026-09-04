@@ -12,6 +12,8 @@ public partial class App : Application
     private Forms.NotifyIcon? _tray;
     private TrayViewModel? _model;
     private TrayWindow? _window;
+    private readonly SingleInstance _singleInstance = new();
+    private readonly CancellationTokenSource _pipeCts = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -26,20 +28,47 @@ public partial class App : Application
             return;
         }
 
+        var folderArg = e.Args.FirstOrDefault(Directory.Exists) is { } f ? Path.GetFullPath(f) : null;
+
+        // Serverlife is resident, but the "Start server here" Explorer verb launches a new
+        // process every time it's used. A second copy would mean a second tray icon and a
+        // second discovery loop, so a launch that finds one already running just hands its
+        // folder over the pipe and quits instead of ever creating a window.
+        if (!_singleInstance.TryBecomePrimary())
+        {
+            SingleInstance.TrySendToPrimary(folderArg);
+            Shutdown(0);
+            return;
+        }
+
         _model = new TrayViewModel();
         _window = new TrayWindow(_model);
         CreateTrayIcon();
 
         // A folder on the command line is staged exactly like a drop. This is the entry
-        // point the Explorer "Serve with Serverlife" folder verb uses, since dropping onto
+        // point the Explorer "Start server here" folder verb uses, since dropping onto
         // a taskbar button is not something the Windows shell delivers to a running app.
-        if (e.Args.FirstOrDefault(Directory.Exists) is { } folder)
-            _model.PrepareDrop(Path.GetFullPath(folder));
+        if (folderArg is not null)
+            _model.PrepareDrop(folderArg);
+
+        _ = _singleInstance.RunServerAsync(OnFolderFromLaterLaunch, _pipeCts.Token);
 
         // Starts visible on first run so it is obvious the app launched; after that the
         // tray icon is how it comes back.
         _window.ShowFromTray();
     }
+
+    /// <summary>
+    /// Runs on the pipe server's background thread whenever a later launch (typically the
+    /// "Start server here" verb) hands off its folder — or, with no folder, just asks to
+    /// be brought to the front.
+    /// </summary>
+    private void OnFolderFromLaterLaunch(string? folder) => Dispatcher.BeginInvoke(() =>
+    {
+        if (folder is not null && Directory.Exists(folder))
+            _model?.PrepareDrop(folder);
+        _window?.ShowFromTray();
+    });
 
     private void CreateTrayIcon()
     {
@@ -104,6 +133,8 @@ public partial class App : Application
             _tray.Dispose();
         }
         _model?.Dispose();
+        _pipeCts.Cancel();
+        _singleInstance.Dispose();
         base.OnExit(e);
     }
 }
