@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- Only for WinForms' NotifyIcon, which is the tray API WPF never got.
+         Keeping it here avoids a third-party tray package entirely. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- These fill the exe's Properties -> Details pane. Left blank they read as
+         suspicious for an unsigned download, and SmartScreen has no publisher to name. -->
+    <AssemblyTitle>Serverlife</AssemblyTitle>
+    <Product>Serverlife</Product>
+    <Company>antidot.gr</Company>
+    <Authors>Christopher Brellis</Authors>
+    <Copyright>Copyright (c) 2026 Christopher Brellis</Copyright>
+    <Description>See every local dev server, start and stop them, and keep them alive while you present.</Description>
+    <!-- Kept in step with VERSION in build/package-mac.sh by hand. -->
+    <Version>0.1.0</Version>
+    <InformationalVersion>0.1.0</InformationalVersion>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <!-- WFAC010: the WinForms analyzer objects to DPI settings in the manifest, but
+         WPF is the real UI stack here and reads them from the manifest. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embedded UI font: dropping other .ttf files here picks them up automatically. -->
+    <Resource Include="Assets\Fonts\*.ttf"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- UseWindowsForms drags these into scope and makes WPF's Application, Point,
+         Brush and friends ambiguous. NotifyIcon is referenced by full name instead. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Win32_Process.CommandLine, for adopting servers we did not start. -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>
