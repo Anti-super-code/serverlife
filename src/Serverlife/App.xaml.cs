@@ -1,3 +1,4 @@
+﻿using System.IO;
 using System.Windows;
 using Serverlife.Core;
 using Serverlife.UI;
@@ -18,7 +19,7 @@ public partial class App : Application
 
         // Headless paths finish and exit without ever creating a window. ShutdownMode is
         // OnExplicitShutdown throughout, because for the GUI a closed window means hidden,
-        // not quit — see TrayWindow.OnClosing.
+        // not quit - see TrayWindow.OnClosing.
         if (e.Args.FirstOrDefault() is "--scan" or "--run")
         {
             _ = RunHeadlessAsync(e.Args);
@@ -28,6 +29,12 @@ public partial class App : Application
         _model = new TrayViewModel();
         _window = new TrayWindow(_model);
         CreateTrayIcon();
+
+        // A folder on the command line is staged exactly like a drop. This is the entry
+        // point the Explorer "Serve with Serverlife" folder verb uses, since dropping onto
+        // a taskbar button is not something the Windows shell delivers to a running app.
+        if (e.Args.FirstOrDefault(Directory.Exists) is { } folder)
+            _model.PrepareDrop(Path.GetFullPath(folder));
 
         // Starts visible on first run so it is obvious the app launched; after that the
         // tray icon is how it comes back.
@@ -100,3 +107,4 @@ public partial class App : Application
         base.OnExit(e);
     }
 }
+

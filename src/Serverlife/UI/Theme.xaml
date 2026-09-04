@@ -166,19 +166,53 @@
     </Style>
 
     <!-- ============ inline text link ============ -->
+    <!-- Size and colour are template-bound rather than baked into the template, so an
+         instance can ask for a smaller link without needing its own copy of the style.
+         The defaults below are what the original hardcoded. -->
     <Style x:Key="LinkButton" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource TextLo}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border Background="Transparent" Padding="7,2">
                         <TextBlock x:Name="label"
                                    Text="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Content}"
-                                   FontSize="12" Foreground="{StaticResource TextLo}"/>
+                                   FontSize="{TemplateBinding FontSize}"
+                                   Foreground="{TemplateBinding Foreground}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="label" Property="Foreground" Value="#2E6BF5"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- For destructive actions. A separate style rather than just a Foreground on the
+         instance, because the base style's hover turns everything accent blue - a Stop
+         control that reads as a link on hover is exactly the wrong signal. -->
+    <Style x:Key="LinkButtonDanger" TargetType="Button" BasedOn="{StaticResource LinkButton}">
+        <Setter Property="Foreground" Value="{StaticResource DangerDeep}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="Transparent" Padding="7,2">
+                        <TextBlock x:Name="label"
+                                   Text="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Content}"
+                                   FontSize="{TemplateBinding FontSize}"
+                                   Foreground="{TemplateBinding Foreground}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="label" Property="Foreground" Value="{StaticResource Danger}"/>
+                            <Setter TargetName="label" Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4"/>
@@ -410,6 +444,49 @@
     </Style>
 
     <!-- ============ secondary (raised, neutral) button ============ -->
+    <!-- Compact AccentButton, the way TrayCloseButton is a compact CloseButton. The
+         original hardcodes Height 52, CornerRadius 26 and FontSize 16 inside its
+         template, so setting Height on an instance yields a circle with overflowing
+         text rather than a smaller pill. Same gradient, same veil and press behaviour,
+         sized for a 28px row. -->
+    <Style x:Key="AccentButtonCompact" TargetType="Button">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="bd" CornerRadius="14" Background="{StaticResource Accent}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#2E6BF5" Direction="270" ShadowDepth="2"
+                                                  BlurRadius="8" Opacity="0.45"/>
+                            </Border.Effect>
+                        </Border>
+                        <Border x:Name="veil" CornerRadius="14" Background="White" Opacity="0"/>
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="veil" Property="Opacity" Value="0.13"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="veil" Property="Opacity" Value="0"/>
+                            <Setter TargetName="bd" Property="RenderTransform">
+                                <Setter.Value>
+                                    <ScaleTransform ScaleX="0.985" ScaleY="0.94" CenterX="0" CenterY="14"/>
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="SoftButton" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Height" Value="52"/>

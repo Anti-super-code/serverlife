@@ -11,6 +11,7 @@
         ResizeMode="CanResize"
         ShowInTaskbar="True"
         AllowDrop="True"
+        DragEnter="OnDragOver" DragOver="OnDragOver" DragLeave="OnDragLeave" Drop="OnDrop"
         FontFamily="{StaticResource AppFont}"
         FontWeight="Light"
         UseLayoutRounding="True"
@@ -121,6 +122,33 @@
                                             VerticalAlignment="Stretch" CornerRadius="8"
                                             Background="#E5E9F0" Opacity="0" Padding="12,0,4,0">
                                       <StackPanel Orientation="Horizontal">
+                                        <!-- Auto-restart is the app's whole point, so on a
+                                             managed row it leads. The Switch style is 56x32
+                                             for a 46px control; a Viewbox scales it to fit a
+                                             30px row without forking the style. -->
+                                        <Viewbox Width="30" Height="17" Margin="0,0,10,0"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding IsManaged, Converter={StaticResource BoolToVis}}">
+                                            <CheckBox Style="{StaticResource Switch}"
+                                                      IsChecked="{Binding AutoRestart, Mode=OneWay}"
+                                                      ToolTip="Restart automatically if it dies"
+                                                      Command="{Binding DataContext.ToggleAutoRestartCommand,
+                                                                RelativeSource={RelativeSource AncestorType=Window}}"
+                                                      CommandParameter="{Binding}"/>
+                                        </Viewbox>
+                                        <Button Content="Manage" Style="{StaticResource LinkButton}" FontSize="11"
+                                                Margin="0,0,10,0" VerticalAlignment="Center"
+                                                ToolTip="Watch this server and restart it if it dies"
+                                                Visibility="{Binding CanManage, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.ManageCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
+                                        <Button Content="Restart" Style="{StaticResource LinkButton}" FontSize="11"
+                                                Margin="0,0,10,0" VerticalAlignment="Center" ToolTip="Restart now"
+                                                Visibility="{Binding IsManaged, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.RestartCommand,
+                                                          RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"/>
                                         <Button Content="Open" Style="{StaticResource LinkButton}" FontSize="11"
                                                 Margin="0,0,10,0" VerticalAlignment="Center"
                                                 ToolTip="Open in browser"
@@ -133,9 +161,10 @@
                                                 Command="{Binding DataContext.CopyUrlCommand,
                                                           RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>
-                                        <Button Content="Folder" Style="{StaticResource LinkButton}" FontSize="11"
-                                                VerticalAlignment="Center" ToolTip="Show in Explorer"
-                                                Command="{Binding DataContext.RevealFolderCommand,
+                                        <Button Content="Stop" Style="{StaticResource LinkButtonDanger}" FontSize="11"
+                                                VerticalAlignment="Center"
+                                                ToolTip="Stop this server and everything it started"
+                                                Command="{Binding DataContext.StopCommand,
                                                           RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>
                                       </StackPanel>
@@ -156,14 +185,46 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- drop hint -->
-            <Border Grid.Row="3" x:Name="DropHint" Margin="14,0,14,12" Height="34" CornerRadius="10"
-                    Background="{StaticResource Sunken}" BorderThickness="1"
-                    BorderBrush="{StaticResource InsetEdge}">
-                <TextBlock x:Name="DropHintText" Text="Drop a folder here to serve it"
-                           FontSize="11" Foreground="{StaticResource TextLo}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
+            <Grid Grid.Row="3" Margin="14,0,14,12">
+                <!-- Resting hint. -->
+                <Border x:Name="DropHint" Height="34" CornerRadius="10"
+                        Background="{StaticResource Sunken}" BorderThickness="1"
+                        BorderBrush="{StaticResource InsetEdge}">
+                    <TextBlock x:Name="DropHintText" Text="Drop a folder here to serve it"
+                               FontSize="11" Foreground="{StaticResource TextLo}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
+                <!-- Staged drop: the guessed command is shown and editable before anything
+                     runs, so a wrong guess costs a glance rather than a confusing minute. -->
+                <Border CornerRadius="10" Background="{StaticResource Surface}" Padding="10,8"
+                        BorderThickness="1" BorderBrush="{StaticResource InsetEdge}"
+                        Visibility="{Binding HasPendingDrop, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DropFolderName}" FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextHi}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding DropWhy}" FontSize="10.5" Margin="0,1,0,6"
+                                   Foreground="{StaticResource TextLo}" TextTrimming="CharacterEllipsis"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Style="{StaticResource NeuTextBox}" FontSize="11.5"
+                                     Height="28" VerticalContentAlignment="Center"
+                                     Text="{Binding DropCommand, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Leave empty to serve the folder with Serverlife's built-in server"/>
+                            <Button Grid.Column="1" Content="Start" Style="{StaticResource AccentButtonCompact}"
+                                    Width="62" Margin="8,0,0,0" FontSize="11.5" FontWeight="SemiBold"
+                                    Command="{Binding ConfirmDropCommand}"/>
+                            <Button Grid.Column="2" Content="Cancel" Style="{StaticResource LinkButton}"
+                                    FontSize="11" Margin="10,0,2,0"
+                                    Command="{Binding CancelDropCommand}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Grid>
     </Border>
 </Window>
