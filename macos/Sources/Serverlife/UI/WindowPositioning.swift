@@ -53,4 +53,29 @@ enum WindowPositioning {
         let originY = topAK - h
         return NSRect(x: originX, y: originY, width: w, height: h)
     }
+
+    /// Places the tray panel just under its status item, right-aligned to the item's
+    /// button — the counterpart of TrayWindow's own PositionNearTray (bottom-right of
+    /// the work area), which has no macOS equivalent: here the panel belongs under the
+    /// menu-bar icon that opened it, not tucked into a screen corner.
+    static func frameBelowStatusItem(button: NSStatusBarButton, width: CGFloat, height: CGFloat) -> NSRect {
+        guard let buttonWindow = button.window else {
+            return NSRect(x: 0, y: 0, width: width, height: height)
+        }
+        let buttonFrameInScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let screen = NSScreen.screens.first { NSMouseInRect(buttonFrameInScreen.origin, $0.frame, false) }
+            ?? NSScreen.main
+        let work = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: width, height: height)
+
+        let gap: CGFloat = 4
+        var x = buttonFrameInScreen.maxX - width
+        var y = buttonFrameInScreen.minY - gap - height
+
+        x = max(work.minX, min(x, work.maxX - width))
+        // The status item sits at the very top of its screen, so the panel always has
+        // room below it; no need for the cursor-positioning flip-to-the-other-side logic.
+        y = max(work.minY, min(y, work.maxY - height))
+
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
 }

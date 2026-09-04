@@ -126,10 +126,16 @@ struct ChipButtonStyle: ButtonStyle {
 }
 
 struct LinkButtonStyle: ButtonStyle {
+    /// nil keeps the original grey-resting/blue-pressed pair; a tint (e.g. Theme.danger,
+    /// for Serverlife's row-level Stop action — the counterpart of TrayWindow.xaml's
+    /// LinkButtonDanger style) is used at rest instead, so a destructive link reads as
+    /// such even before it's hovered.
+    var tint: Color?
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.font(size: 12))
-            .foregroundColor(configuration.isPressed ? Theme.accentBlue : Theme.textLo)
+            .foregroundColor(configuration.isPressed ? (tint ?? Theme.accentBlue) : (tint ?? Theme.textLo))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
     }
@@ -148,9 +154,11 @@ struct RoundIconButtonStyle: ButtonStyle {
     }
 }
 
-/// The window's close (X) / options (cog) buttons — same geometry, different glyph.
+/// The window's close (X) / options (cog) / info (i) buttons — same geometry, different
+/// glyph. `.info` is Serverlife's own addition, for the tray panel header button that
+/// opens the About & Settings panel (TrayWindow.xaml's new InfoButton style).
 struct RoundGlyphButton: View {
-    enum Kind { case close, options }
+    enum Kind { case close, options, info }
     /// `.accent` is the main window's close button: red on hover. The
     /// gallery tray's own close button uses `.neutral` instead — a darker
     /// grey — per direct feedback that a secondary/tray-level close
@@ -158,6 +166,9 @@ struct RoundGlyphButton: View {
     enum HoverStyle { case accent, neutral }
     var kind: Kind
     var hoverStyle: HoverStyle = .accent
+    /// 46 matches the main window's own close/cog buttons; Serverlife's tray panel is
+    /// far smaller than that window and uses 28 for its header row instead.
+    var size: CGFloat = 46
     var action: () -> Void
 
     @State private var hovering = false
@@ -170,7 +181,7 @@ struct RoundGlyphButton: View {
                     .neumorphicRaised(radius: hovering ? 0 : 5)
                 glyph
             }
-            .frame(width: 46, height: 46)
+            .frame(width: size, height: size)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -189,13 +200,17 @@ struct RoundGlyphButton: View {
         case .close:
             ZStack {
                 Rectangle().fill(hovering ? Color.white : Theme.textMid)
-                    .frame(width: 2.4, height: 15).rotationEffect(.degrees(45))
+                    .frame(width: 2.4, height: size * 0.33).rotationEffect(.degrees(45))
                 Rectangle().fill(hovering ? Color.white : Theme.textMid)
-                    .frame(width: 2.4, height: 15).rotationEffect(.degrees(-45))
+                    .frame(width: 2.4, height: size * 0.33).rotationEffect(.degrees(-45))
             }
         case .options:
             Image(systemName: "gearshape.fill")
-                .font(.system(size: 17, weight: .medium))
+                .font(.system(size: size * 0.37, weight: .medium))
+                .foregroundColor(hovering ? .white : Theme.textMid)
+        case .info:
+            Image(systemName: "info")
+                .font(.system(size: size * 0.33, weight: .semibold))
                 .foregroundColor(hovering ? .white : Theme.textMid)
         }
     }

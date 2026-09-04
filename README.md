@@ -14,26 +14,30 @@ on macOS.
 
 ## Status
 
-The Windows app works end to end. The macOS half has not been started.
+Both apps work end to end.
 
-| | |
-|---|---|
-| Discovery (ports, PIDs, folders, page titles) | ✅ Windows |
-| Contested-port detection | ✅ Windows |
-| Tray panel, resident, close-to-tray | ✅ Windows |
-| Start / stop (whole process tree) | ✅ Windows |
-| Drop a folder to serve it | ✅ Windows |
-| Built-in static server, no tooling needed | ✅ Windows |
-| Auto-restart watchdog with backoff | ✅ Windows |
-| Adopt an externally started server | ✅ Windows |
-| Origin split (Mine / System) with manual pins | ✅ Windows |
-| About/settings panel, Explorer "Start server here" verb | ✅ Windows |
-| Packaging (`build/package.ps1` → zip + sha256) | ✅ Windows |
-| Launch-at-login | not yet |
-| Automated tests | not yet — `tests/` is a placeholder |
-| macOS app | not started |
+| | | |
+|---|---|---|
+| Discovery (ports, PIDs, folders, page titles) | ✅ Windows | ✅ macOS |
+| Origin split (Mine / System) with manual pins | ✅ Windows | ✅ macOS |
+| Contested-port detection | ✅ Windows | ✅ macOS, rare in practice |
+| Tray / menu bar panel, resident, close-to-tray | ✅ Windows | ✅ macOS |
+| About & settings panel, always-on-top | ✅ Windows | ✅ macOS |
+| Start / stop (whole process tree) | ✅ Windows | ✅ macOS |
+| Drop a folder to serve it | ✅ Windows | ✅ macOS |
+| Built-in static server, no tooling needed | ✅ Windows | ✅ macOS |
+| Auto-restart watchdog with backoff | ✅ Windows | ✅ macOS |
+| Adopt an externally started server | ✅ Windows | ✅ macOS |
+| Right-click "Start server here" | ✅ Windows (Explorer verb) | ✅ macOS (Finder Quick Action) |
+| Single-instance folder handoff | ✅ Windows (mutex/pipe) | ✅ macOS (free — `LSMultipleInstancesProhibited`) |
+| Packaging (zip/app + sha256) | ✅ Windows (`build/package.ps1`) | ✅ macOS (`build/package-mac.sh`) |
+| Automated tests | not yet — `tests/` is a placeholder | ✅ macOS (`macos/Tests/ServerlifeCoreTests`) |
+| Launch-at-login | not yet | not yet |
+| CI / notarization | not yet | not yet |
 
 ## Run it
+
+### Windows
 
 ```
 dotnet build src/Serverlife/Serverlife.csproj
@@ -44,11 +48,32 @@ It lands in the notification area. Left-click toggles the panel; closing the win
 it; Quit is on the tray menu. Pass a folder path to stage it for serving, which is what
 the Explorer folder verb will do.
 
+### macOS
+
+```
+cd macos && swift build
+.build/debug/Serverlife
+```
+
+It lands in the menu bar (and the Dock). Left-click the menu bar icon toggles the panel;
+closing it hides to the menu bar; Quit is on its right-click menu. Drag a folder onto it,
+or right-click a folder in Finder and choose "Start server here" once that's switched on
+from the (i) button's settings panel.
+
 ### Headless modes
+
+Windows:
 
 ```
 Serverlife.exe --scan [--all]
 Serverlife.exe --run <folder> [command] [--seconds N] [--no-restart]
+```
+
+macOS (a separate `serverlife-cli` binary, built from `macos/Sources/ServerlifeCLI`):
+
+```
+serverlife-cli --scan [--all]
+serverlife-cli --run <folder> [command] [--seconds N] [--no-restart]
 ```
 
 ```
@@ -68,29 +93,44 @@ connections. That is what "I edited the file and nothing changed" usually is.
 
 ## How it finds things
 
-Windows exposes these facts in three different places, so discovery uses three mechanisms:
+Windows and macOS expose these facts in different places entirely, so each platform's
+`Discovery` uses its own mechanisms:
 
-| Fact | Source |
-|---|---|
-| Listening ports → owning PID | `GetExtendedTcpTable` (iphlpapi) |
-| Process name, command line, parent | `Win32_Process` via WMI, one batched query |
-| **Working directory** | read out of the target process's PEB — WMI does not expose it |
-| Page title | one capped `GET` to the port, cached per (port, PID) |
+| Fact | Windows | macOS |
+|---|---|---|
+| Listening ports → owning PID | `GetExtendedTcpTable` (iphlpapi) | `proc_listpids` → `proc_pidinfo`/`proc_pidfdinfo` (libproc) |
+| Process name, command line, parent | `Win32_Process` via WMI, one batched query | `proc_name`, `sysctl(KERN_PROCARGS2)`, `proc_pidinfo` — one syscall each, no batching needed |
+| **Working directory** | read out of the target process's PEB — WMI does not expose it | `proc_pidinfo(PROC_PIDVNODEPATHINFO)` — a documented API |
+| Page title | one capped `GET` to the port, cached per (port, PID) | same |
 
-The PEB read is the fragile one: it uses undocumented offsets, handles 64-bit targets
-only, and is allowed to fail quietly. Everything degrades to "unknown folder" rather
-than breaking the list.
+On Windows the PEB read is the fragile step: undocumented offsets, 64-bit targets only,
+allowed to fail quietly. macOS has no such step — `PROC_PIDVNODEPATHINFO` is a supported
+API — so the only way a folder comes back unknown there is a same-uid restriction (a
+process owned by another user). Both platforms degrade to "unknown folder" rather than
+breaking the list.
+
+Contested ports — several unrelated processes bound to the same port, which is what "I
+edited the file and nothing changed" usually turns out to be — are a genuinely Windows
+pathology: Windows allows a second bind unless a socket asks for `SO_EXCLUSIVEADDRUSE`,
+while BSD (macOS) refuses a second bind outright unless a socket asks for the opposite,
+`SO_REUSEPORT`. The detection ships on both platforms, but it is rare in practice on macOS.
 
 ## Layout
 
 ```
 src/Serverlife/     Windows app — C# / WPF, net8.0-windows
 macos/              macOS app — Swift / SwiftUI, SwiftPM
+                      Sources/ServerlifeCore   discovery, supervisor, static server, Finder integration
+                      Sources/ServerlifeCLI    headless --scan / --run, a separate binary
+                      Sources/Serverlife       the menu bar app
+                      Tests/ServerlifeCoreTests
 tests/              placeholder — nothing here yet
-build/              packaging scripts, one per platform (package.ps1 for Windows so far)
+build/              packaging scripts, one per platform (package.ps1, package-mac.sh)
 ```
 
 ## Building a release
+
+Windows:
 
 ```
 build\package.ps1
@@ -99,6 +139,16 @@ build\package.ps1
 Publishes framework-dependent (needs the .NET 8 Desktop Runtime, not bundled), bundles
 `LICENSE` and `THIRD-PARTY-NOTICES.md`, writes a `READ-ME-FIRST.txt`, and zips the result
 with a `.sha256` beside it — into `dist/`, not committed.
+
+macOS:
+
+```
+bash build/package-mac.sh
+```
+
+Builds both the app and `serverlife-cli`, assembles a self-contained, ad-hoc-signed
+`Serverlife.app` with its own `.icns` and bundled fonts, and bundles `LICENSE` and a
+`READ-ME-FIRST.txt` beside it — into `dist-mac/`, not committed.
 
 ## Licence
 
