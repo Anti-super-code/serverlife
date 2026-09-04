@@ -26,9 +26,12 @@ The Windows app works end to end. The macOS half has not been started.
 | Built-in static server, no tooling needed | ✅ Windows |
 | Auto-restart watchdog with backoff | ✅ Windows |
 | Adopt an externally started server | ✅ Windows |
-| Persistence, launch-at-login, Explorer verb | not yet |
+| Origin split (Mine / System) with manual pins | ✅ Windows |
+| About/settings panel, Explorer "Start server here" verb | ✅ Windows |
+| Packaging (`build/package.ps1` → zip + sha256) | ✅ Windows |
+| Launch-at-login | not yet |
+| Automated tests | not yet — `tests/` is a placeholder |
 | macOS app | not started |
-| CI / packaging | not yet |
 
 ## Run it
 
@@ -83,10 +86,21 @@ than breaking the list.
 ```
 src/Serverlife/     Windows app — C# / WPF, net8.0-windows
 macos/              macOS app — Swift / SwiftUI, SwiftPM
-tests/              Windows unit tests
-build/              packaging scripts, one per platform
+tests/              placeholder — nothing here yet
+build/              packaging scripts, one per platform (package.ps1 for Windows so far)
 ```
+
+## Building a release
+
+```
+build\package.ps1
+```
+
+Publishes framework-dependent (needs the .NET 8 Desktop Runtime, not bundled), bundles
+`LICENSE` and `THIRD-PARTY-NOTICES.md`, writes a `READ-ME-FIRST.txt`, and zips the result
+with a `.sha256` beside it — into `dist/`, not committed.
 
 ## Licence
 
-MIT. Bundles Fira Sans Condensed under the SIL Open Font License — see `licenses/`.
+MIT. Bundles Fira Sans Condensed under the SIL Open Font License — see `licenses/` and
+`THIRD-PARTY-NOTICES.md`.
