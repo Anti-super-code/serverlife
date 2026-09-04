@@ -14,22 +14,38 @@ on macOS.
 
 ## Status
 
-Early. Discovery works on Windows and is verified against real servers; the tray UI,
-supervisor and macOS half are in progress.
+The Windows app works end to end. The macOS half has not been started.
 
 | | |
 |---|---|
 | Discovery (ports, PIDs, folders, page titles) | ✅ Windows |
 | Contested-port detection | ✅ Windows |
-| Start / stop / drop-to-serve | in progress |
-| Auto-restart watchdog | in progress |
-| macOS app | in progress |
+| Tray panel, resident, close-to-tray | ✅ Windows |
+| Start / stop (whole process tree) | ✅ Windows |
+| Drop a folder to serve it | ✅ Windows |
+| Built-in static server, no tooling needed | ✅ Windows |
+| Auto-restart watchdog with backoff | ✅ Windows |
+| Adopt an externally started server | ✅ Windows |
+| Persistence, launch-at-login, Explorer verb | not yet |
+| macOS app | not started |
+| CI / packaging | not yet |
 
-## Try the Windows discovery now
+## Run it
 
 ```
 dotnet build src/Serverlife/Serverlife.csproj
-src/Serverlife/bin/Debug/net8.0-windows/Serverlife.exe --scan
+src/Serverlife/bin/Debug/net8.0-windows/Serverlife.exe
+```
+
+It lands in the notification area. Left-click toggles the panel; closing the window hides
+it; Quit is on the tray menu. Pass a folder path to stage it for serving, which is what
+the Explorer folder verb will do.
+
+### Headless modes
+
+```
+Serverlife.exe --scan [--all]
+Serverlife.exe --run <folder> [command] [--seconds N] [--no-restart]
 ```
 
 ```
