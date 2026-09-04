@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using Serverlife.Core;
 using Serverlife.ViewModels;
 
@@ -172,19 +173,40 @@ public partial class TrayWindow : Window
             heartbeat.Stop(this);
     }
 
+    /// <summary>The card Border's Margin="12" in TrayWindow.xaml — same inset on all four sides.</summary>
+    private const double ChromeMargin = 12;
+
     /// <summary>
     /// Grows (never shrinks) the window so the info panel's footer — the CTA and version
-    /// line — lands inside the frame instead of needing a scroll to reach it. Measures the
-    /// panel's actual desired height rather than a hardcoded one, so it stays correct if
-    /// the content here changes. Grows upward, keeping the bottom edge (and the tray it's
-    /// anchored near) fixed, rather than pushing the window further down the screen.
+    /// line — lands inside the frame instead of needing a scroll to reach it. Grows
+    /// upward, keeping the bottom edge (and the tray it's anchored near) fixed, rather
+    /// than pushing the window further down the screen.
+    ///
+    /// Two passes: Measure() gives an instant, mostly-right size with no visible jump for
+    /// the common case, but it's a prediction, not the truth WPF's real layout will land
+    /// on. Once that real layout has actually run (DispatcherPriority.Loaded), a second
+    /// pass checks the ScrollViewer's own ScrollableHeight and closes whatever gap is
+    /// left — that's what actually guarantees no scrollbar, rather than trusting the
+    /// prediction to be exact.
     /// </summary>
     private void GrowForInfo()
     {
-        InfoPanel.Measure(new Size(ActualWidth, double.PositiveInfinity));
-        var wanted = HeaderRow.ActualHeight + InfoPanel.DesiredSize.Height + 24; // 24 = window's top+bottom margin
         var maxHeight = SystemParameters.WorkArea.Height - 16;
-        var newHeight = Math.Clamp(Math.Max(Height, wanted), MinHeight, maxHeight);
+
+        InfoPanel.Measure(new Size(ActualWidth - 2 * ChromeMargin, double.PositiveInfinity));
+        var wanted = HeaderRow.ActualHeight + InfoPanel.DesiredSize.Height + 2 * ChromeMargin + 8;
+        GrowTo(Math.Clamp(Math.Max(Height, wanted), MinHeight, maxHeight));
+
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!InfoShowing || InfoScroll.ScrollableHeight <= 0)
+                return;
+            GrowTo(Math.Min(Height + InfoScroll.ScrollableHeight + 4, maxHeight));
+        }), DispatcherPriority.Loaded);
+    }
+
+    private void GrowTo(double newHeight)
+    {
         Top -= newHeight - Height;
         Height = newHeight;
     }

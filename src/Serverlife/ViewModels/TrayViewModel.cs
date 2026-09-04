@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serverlife.Core;
@@ -50,6 +51,7 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
 
     public bool HasPendingDrop => DropFolder is not null;
     public string DropFolderName => DropFolder is null ? "" : Path.GetFileName(DropFolder.TrimEnd('\\'));
+    public bool ShowDropCommandPlaceholder => DropCommand.Length == 0;
 
     public TrayViewModel()
     {
@@ -87,6 +89,8 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasPendingDrop));
         OnPropertyChanged(nameof(DropFolderName));
     }
+
+    partial void OnDropCommandChanged(string value) => OnPropertyChanged(nameof(ShowDropCommandPlaceholder));
 
     // ---- drop to serve ------------------------------------------------------------
 
@@ -299,6 +303,50 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
         // one would let the next poll build a second row for the same server.
         _byKey.Remove(row.Key);
         UpdateSummary();
+
+        // The Manage button's own Visibility is bound to CanManage, which just went false -
+        // so the element under the cursor vanished mid-click. WPF doesn't re-check hover
+        // state on its own until the next real mouse move, leaving the row's action panel
+        // stuck showing. Forcing a re-sync now is what that next mouse move would have done.
+        Mouse.Synchronize();
+    }
+
+    // ---- manual origin pins ---------------------------------------------------------
+    //
+    // The Mine/System split is a best-effort guess from where a server runs, and it will
+    // occasionally get something wrong - a folder that happens to sit under AppData\Local,
+    // or a service like the GT3 one a user hit whose folder can't be read at all. These
+    // let a right-click correct it, in either direction, and the correction sticks.
+
+    [RelayCommand]
+    private static void MarkNotMine(ServerRowItem? row)
+    {
+        if (row is not { IsManaged: false, OverrideKey.Length: > 0 })
+            return;
+        OriginOverrideStore.Set(row.OverrideKey, ServerOrigin.System);
+        row.Origin = ServerOrigin.System;
+        row.Notify();
+    }
+
+    [RelayCommand]
+    private static void MarkMine(ServerRowItem? row)
+    {
+        if (row is not { IsManaged: false, OverrideKey.Length: > 0 })
+            return;
+        OriginOverrideStore.Set(row.OverrideKey, ServerOrigin.Mine);
+        row.Origin = ServerOrigin.Mine;
+        row.Notify();
+    }
+
+    [RelayCommand]
+    private static void ResetOrigin(ServerRowItem? row)
+    {
+        if (row is not { IsManaged: false, OverrideKey.Length: > 0 })
+            return;
+        OriginOverrideStore.Clear(row.OverrideKey);
+        // Re-derive from the heuristic immediately rather than waiting for the next poll.
+        row.Origin = OriginClassifier.Classify(row.WorkingDirectory);
+        row.Notify();
     }
 
     [RelayCommand]

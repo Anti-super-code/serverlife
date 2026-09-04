@@ -38,8 +38,12 @@ public sealed record DetectedServer(
 
     public string Url => $"{Probe.Scheme ?? "http"}://localhost:{Port}/";
 
-    /// <summary>Whose server this looks like, judged from where it runs. See <see cref="OriginClassifier"/>.</summary>
-    public ServerOrigin Origin => OriginClassifier.Classify(WorkingDirectory);
+    /// <summary>
+    /// Whose server this looks like. A user pin (see <see cref="OriginOverrideStore"/>)
+    /// wins outright; otherwise falls back to <see cref="OriginClassifier"/>'s guess.
+    /// </summary>
+    public ServerOrigin Origin => OriginOverrideStore.Get(OriginOverrideStore.KeyFor(WorkingDirectory, ProcessName))
+        ?? OriginClassifier.Classify(WorkingDirectory);
 
     private string BareProcessName => Path.GetFileNameWithoutExtension(ProcessName);
 

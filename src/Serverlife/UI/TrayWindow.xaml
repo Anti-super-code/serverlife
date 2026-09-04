@@ -118,7 +118,31 @@
                             <!-- 30px, one line. The folder and command line live in the
                                  tooltip so every row costs exactly one line. -->
                             <Border x:Name="row" Height="30" CornerRadius="8" Margin="0,0,0,2"
-                                    Background="Transparent" ToolTip="{Binding Tooltip}">
+                                    Background="Transparent" ToolTip="{Binding Tooltip}"
+                                    Tag="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=DataContext}">
+                                <!-- Right-click origin pin. A ContextMenu is a separate popup,
+                                     not part of this visual tree, so AncestorType=Window
+                                     bindings (used everywhere else in this row) don't reach -
+                                     Tag above relays the view model in instead. -->
+                                <Border.ContextMenu>
+                                    <ContextMenu FontFamily="{StaticResource AppFont}" FontSize="12">
+                                        <MenuItem Header="Not mine — move to general pool"
+                                                  Visibility="{Binding ShowNotMine, Converter={StaticResource BoolToVis}}"
+                                                  Command="{Binding PlacementTarget.Tag.MarkNotMineCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding}"/>
+                                        <MenuItem Header="Mark as mine"
+                                                  Visibility="{Binding ShowMarkMine, Converter={StaticResource BoolToVis}}"
+                                                  Command="{Binding PlacementTarget.Tag.MarkMineCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding}"/>
+                                        <MenuItem Header="Reset to automatic"
+                                                  Visibility="{Binding HasOriginOverride, Converter={StaticResource BoolToVis}}"
+                                                  Command="{Binding PlacementTarget.Tag.ResetOriginCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding}"/>
+                                    </ContextMenu>
+                                </Border.ContextMenu>
                                 <!-- Two layers, not two columns. The actions are an overlay
                                      so they reserve no width at rest: as sibling columns
                                      they would hold their full size at Opacity 0 and cut
@@ -265,10 +289,19 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0" Style="{StaticResource NeuTextBox}" FontSize="11.5"
-                                     Height="28" VerticalContentAlignment="Center"
-                                     Text="{Binding DropCommand, UpdateSourceTrigger=PropertyChanged}"
-                                     ToolTip="Leave empty to serve the folder with Serverlife's built-in server"/>
+                            <Grid Grid.Column="0">
+                                <TextBox Style="{StaticResource NeuTextBox}" FontSize="11.5"
+                                         Height="28" VerticalContentAlignment="Center"
+                                         Text="{Binding DropCommand, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Leave empty to serve the folder with Serverlife's built-in server"/>
+                                <!-- NeuTextBox's own text starts at Margin 10 from its edge
+                                     (see PART_ContentHost in Theme.xaml) - matched here so
+                                     the placeholder sits exactly where typed text would. -->
+                                <TextBlock Text="special commands here" FontSize="11.5"
+                                           Margin="10,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextLo}" IsHitTestVisible="False"
+                                           Visibility="{Binding ShowDropCommandPlaceholder, Converter={StaticResource BoolToVis}}"/>
+                            </Grid>
                             <Button Grid.Column="1" Content="Start" Style="{StaticResource AccentButtonCompact}"
                                     Width="62" Margin="8,0,0,0" FontSize="11.5" FontWeight="SemiBold"
                                     Command="{Binding ConfirmDropCommand}"/>
@@ -294,7 +327,7 @@
                      corners. Only the bottom needs rounding; the top edge sits mid-card. -->
                 <Border Grid.RowSpan="2" CornerRadius="0,0,16,16" Background="{StaticResource TrayBg}"/>
 
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer x:Name="InfoScroll" Grid.Row="0" VerticalScrollBarVisibility="Auto">
                     <ScrollViewer.Resources>
                         <Style TargetType="ScrollBar" BasedOn="{StaticResource SlimScrollBar}"/>
                     </ScrollViewer.Resources>

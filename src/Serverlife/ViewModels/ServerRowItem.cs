@@ -71,6 +71,22 @@ public sealed partial class ServerRowItem : ObservableObject
     /// <summary>Running out of an OS or installed-application folder — not one of your projects.</summary>
     public bool IsSystem => Origin == ServerOrigin.System;
 
+    /// <summary>
+    /// The key a manual pin is stored under — WorkingDirectory when known, else
+    /// ProcessName. Set from Apply(); "" for a managed row, which is never overridable
+    /// since you dropped or adopted it yourself and it's already unconditionally Mine.
+    /// </summary>
+    public string OverrideKey { get; private set; } = "";
+
+    /// <summary>Right-click "Not mine" — offered for a discovered row not already tagged system.</summary>
+    public bool ShowNotMine => !IsManaged && Origin != ServerOrigin.System;
+
+    /// <summary>Right-click "Mark as mine" — offered for a discovered row currently tagged system.</summary>
+    public bool ShowMarkMine => !IsManaged && Origin == ServerOrigin.System;
+
+    /// <summary>Whether a pin exists for this row's key, so "Reset to automatic" has something to undo.</summary>
+    public bool HasOriginOverride => !IsManaged && OverrideKey.Length > 0 && OriginOverrideStore.Get(OverrideKey) is not null;
+
     /// <summary>Only an external server with a readable command and folder can be adopted.</summary>
     public bool CanManage => Managed is null && IsAdoptable;
 
@@ -128,6 +144,7 @@ public sealed partial class ServerRowItem : ObservableObject
             CommandLine = server.CommandLine;
             State = ServerState.Running;
             Origin = server.Origin;
+            OverrideKey = OriginOverrideStore.KeyFor(server.WorkingDirectory, server.ProcessName);
         }
 
         Notify();
@@ -156,12 +173,21 @@ public sealed partial class ServerRowItem : ObservableObject
         Notify();
     }
 
-    private void Notify()
+    /// <summary>
+    /// Re-raises everything derived from the observable properties above. Called after
+    /// Apply/SyncFromManaged, and also directly by the origin-override commands in
+    /// TrayViewModel — those set Origin themselves for an instant UI update rather than
+    /// waiting for the next discovery poll to come back around through Apply().
+    /// </summary>
+    public void Notify()
     {
         OnPropertyChanged(nameof(IsContested));
         OnPropertyChanged(nameof(IsSystem));
         OnPropertyChanged(nameof(CanManage));
         OnPropertyChanged(nameof(HasUrl));
+        OnPropertyChanged(nameof(ShowNotMine));
+        OnPropertyChanged(nameof(ShowMarkMine));
+        OnPropertyChanged(nameof(HasOriginOverride));
         OnPropertyChanged(nameof(Tooltip));
     }
 
