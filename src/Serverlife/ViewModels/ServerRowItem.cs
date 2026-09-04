@@ -75,6 +75,12 @@ public sealed partial class ServerRowItem : ObservableObject
     public bool CanManage => Managed is null && IsAdoptable;
 
     /// <summary>
+    /// False for a managed row between "added" and "actually listening" — no port yet,
+    /// so Url is still "". Open/Copy hide rather than firing at an empty string.
+    /// </summary>
+    public bool HasUrl => Url.Length > 0;
+
+    /// <summary>
     /// The full detail, shown on hover. The list itself stays one line per row, so the
     /// folder and command live here rather than taking a second line from every row.
     /// </summary>
@@ -155,6 +161,7 @@ public sealed partial class ServerRowItem : ObservableObject
         OnPropertyChanged(nameof(IsContested));
         OnPropertyChanged(nameof(IsSystem));
         OnPropertyChanged(nameof(CanManage));
+        OnPropertyChanged(nameof(HasUrl));
         OnPropertyChanged(nameof(Tooltip));
     }
 

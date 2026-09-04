@@ -1,5 +1,7 @@
-﻿using System.IO;
+﻿using System.Diagnostics;
+using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using Serverlife.Core;
 using Serverlife.UI;
 using Serverlife.ViewModels;
@@ -18,6 +20,11 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // A resident app's whole value is being there when something else falls over -
+        // one row's button hitting an edge case (see OnDispatcherUnhandledException)
+        // should not take the tray icon down with it, the way it just did.
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
 
         // Headless paths finish and exit without ever creating a window. ShutdownMode is
         // OnExplicitShutdown throughout, because for the GUI a closed window means hidden,
@@ -115,6 +122,17 @@ public partial class App : Application
         {
         }
         return System.Drawing.SystemIcons.Application;
+    }
+
+    /// <summary>
+    /// Last line of defence: logs and swallows rather than letting one bad click end the
+    /// whole resident process - the state a mid-action exception leaves things in is a
+    /// smaller problem for a tray app than the tray icon silently vanishing.
+    /// </summary>
+    private static void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        Debug.WriteLine($"[Serverlife] unhandled UI exception: {e.Exception}");
+        e.Handled = true;
     }
 
     private async Task RunHeadlessAsync(string[] args)

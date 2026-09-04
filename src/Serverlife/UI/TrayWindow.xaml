@@ -104,8 +104,6 @@
                                  Checked="OnFilterChecked" Tag="All"/>
                     <RadioButton Content="Running" Style="{StaticResource Segment}"
                                  Checked="OnFilterChecked" Tag="Running"/>
-                    <RadioButton Content="Managed" Style="{StaticResource Segment}"
-                                 Checked="OnFilterChecked" Tag="Managed"/>
                 </UniformGrid>
             </local:SegmentTrack>
 
@@ -206,12 +204,14 @@
                                         <Button Content="Open" Style="{StaticResource LinkButton}" FontSize="11"
                                                 Margin="0,0,10,0" VerticalAlignment="Center"
                                                 ToolTip="Open in browser"
+                                                Visibility="{Binding HasUrl, Converter={StaticResource BoolToVis}}"
                                                 Command="{Binding DataContext.OpenCommand,
                                                           RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>
                                         <Button Content="Copy" Style="{StaticResource LinkButton}" FontSize="11"
                                                 Margin="0,0,10,0" VerticalAlignment="Center"
                                                 ToolTip="Copy URL"
+                                                Visibility="{Binding HasUrl, Converter={StaticResource BoolToVis}}"
                                                 Command="{Binding DataContext.CopyUrlCommand,
                                                           RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"/>

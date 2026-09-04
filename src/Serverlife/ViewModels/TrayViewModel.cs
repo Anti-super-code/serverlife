@@ -10,7 +10,7 @@ using Serverlife.Core;
 
 namespace Serverlife.ViewModels;
 
-public enum RowFilter { All, Mine, Running, Managed }
+public enum RowFilter { All, Mine, Running }
 
 /// <summary>
 /// Backs the tray window: owns the live row collection, the filter, the pending drop, and
@@ -76,7 +76,6 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
             return;
         liveShaping.LiveFilteringProperties.Add(nameof(ServerRowItem.Origin));
         liveShaping.LiveFilteringProperties.Add(nameof(ServerRowItem.State));
-        liveShaping.LiveFilteringProperties.Add(nameof(ServerRowItem.IsManaged));
         liveShaping.IsLiveFiltering = true;
     }
 
@@ -241,7 +240,6 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
             // a real dev server never disappears just because its folder couldn't be read.
             RowFilter.Mine => o => o is ServerRowItem { Origin: not ServerOrigin.System },
             RowFilter.Running => o => o is ServerRowItem { State: ServerState.Running },
-            RowFilter.Managed => o => o is ServerRowItem { IsManaged: true },
             _ => null,
         };
     }
@@ -262,7 +260,10 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private static void Open(ServerRowItem? row)
     {
-        if (row is null)
+        // Url is "" for a managed row that hasn't started listening yet - passing that as
+        // a FileName throws and previously took the whole app down (no ProcessStartInfo,
+        // no process). The button hides itself via HasUrl; this guards the command too.
+        if (row is not { HasUrl: true })
             return;
         // UseShellExecute sends it to the default browser rather than trying to exec a URL.
         Process.Start(new ProcessStartInfo(row.Url) { UseShellExecute = true });
@@ -271,7 +272,7 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private static void CopyUrl(ServerRowItem? row)
     {
-        if (row is not null)
+        if (row is { HasUrl: true })
             Clipboard.SetText(row.Url);
     }
 
