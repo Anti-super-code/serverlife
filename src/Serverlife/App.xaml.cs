@@ -19,7 +19,7 @@ public partial class App : Application
         // Headless paths finish and exit without ever creating a window. ShutdownMode is
         // OnExplicitShutdown throughout, because for the GUI a closed window means hidden,
         // not quit — see TrayWindow.OnClosing.
-        if (e.Args.Length > 0 && e.Args[0] == "--scan")
+        if (e.Args.FirstOrDefault() is "--scan" or "--run")
         {
             _ = RunHeadlessAsync(e.Args);
             return;

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace Serverlife.Core;
@@ -21,12 +22,88 @@ public static class CliRunner
     {
         AttachConsole(AttachParentProcess);
 
-        if (args.Length == 0 || args[0] != "--scan")
+        return args.FirstOrDefault() switch
         {
-            Console.Error.WriteLine("usage: Serverlife.exe --scan [--all]");
+            "--scan" => await ScanAsync(args).ConfigureAwait(false),
+            "--run" => await RunSupervisedAsync(args).ConfigureAwait(false),
+            _ => Usage(),
+        };
+    }
+
+    private static int Usage()
+    {
+        Console.Error.WriteLine("""
+            usage:
+              Serverlife.exe --scan [--all]
+                  List listening ports. --all includes ports that did not answer as HTTP.
+
+              Serverlife.exe --run <folder> [command] [--seconds N] [--no-restart]
+                  Start a supervised server and report its state until N seconds elapse.
+                  With no command, the folder is served by the built-in static server.
+            """);
+        return 2;
+    }
+
+    /// <summary>
+    /// Exercises the supervisor without the UI: start something, watch the watchdog react
+    /// when it dies. This is how the kill-tree and restart behaviour get verified.
+    /// </summary>
+    private static async Task<int> RunSupervisedAsync(string[] args)
+    {
+        if (args.Length < 2)
+            return Usage();
+
+        var folder = Path.GetFullPath(args[1]);
+        if (!Directory.Exists(folder))
+        {
+            Console.Error.WriteLine($"No such folder: {folder}");
             return 2;
         }
 
+        var seconds = 30;
+        var index = Array.IndexOf(args, "--seconds");
+        if (index >= 0 && index + 1 < args.Length)
+            int.TryParse(args[index + 1], out seconds);
+
+        var command = args.Length > 2 && !args[2].StartsWith("--") ? args[2] : "";
+        if (command.Length == 0)
+        {
+            var suggestion = ProjectDetector.Suggest(folder);
+            command = suggestion.Command;
+            Console.WriteLine($"detected: {suggestion.Why}");
+        }
+
+        using var supervisor = new Supervisor();
+        supervisor.Changed += s =>
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {s.State,-10} port={s.Port?.ToString() ?? "-",-6} " +
+                              $"restarts={s.RestartCount} {s.LastError}");
+
+        var server = supervisor.Add(new ManagedServer
+        {
+            Name = Path.GetFileName(folder),
+            Directory = folder,
+            Command = command,
+            AutoRestart = !args.Contains("--no-restart"),
+        });
+
+        supervisor.StartServer(server);
+        supervisor.Start();
+
+        Console.WriteLine($"supervising for {seconds}s — kill it externally to watch it come back");
+        await Task.Delay(TimeSpan.FromSeconds(seconds)).ConfigureAwait(false);
+
+        Console.WriteLine();
+        Console.WriteLine($"final: {server.State}, {server.RestartCount} restart(s), port {server.Port}");
+        Console.WriteLine("--- last log lines ---");
+        foreach (var line in server.Snapshot().TakeLast(12))
+            Console.WriteLine("  " + line);
+
+        supervisor.Stop(server);
+        return 0;
+    }
+
+    private static async Task<int> ScanAsync(string[] args)
+    {
         var showAll = args.Contains("--all");
 
         using var discovery = new Discovery();
