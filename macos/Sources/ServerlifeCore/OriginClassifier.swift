@@ -31,21 +31,63 @@ public enum OriginClassifier {
             "/System", "/usr", "/bin", "/sbin",
             "/Applications", "/Library",
             "\(home)/Applications", "\(home)/Library",
-            "/private/var/db", "/opt/homebrew", "/usr/local",
+            "/private/var/db", "/opt/homebrew", "/opt/local", "/usr/local", "/nix",
         ]
         return Array(Set(candidates)).map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
     }
 
+    /// Interpreters whose own binary path says nothing about whose server this is —
+    /// `/opt/homebrew/bin/node` backs a dev server exactly as often as it backs a
+    /// menu-bar app. Kept in step with `DetectedServer.genericRuntimes`.
+    private static let genericRuntimes: Set<String> = [
+        "node", "python", "python3", "ruby", "php", "java", "deno", "bun", "cargo", "go",
+    ]
+
+    /// Working-directory-only classification — the original signal, kept for callers
+    /// (and tests) that have nothing else to go on.
     public static func classify(workingDirectory: String?) -> ServerOrigin {
-        guard let workingDirectory, !workingDirectory.trimmingCharacters(in: .whitespaces).isEmpty else {
-            return .unknown
-        }
-        let path = workingDirectory.hasSuffix("/") ? String(workingDirectory.dropLast()) : workingDirectory
-        for root in systemRoots {
-            if path.caseInsensitiveCompare(root) == .orderedSame || path.lowercased().hasPrefix(root.lowercased() + "/") {
+        classify(workingDirectory: workingDirectory, executablePath: nil, processName: nil)
+    }
+
+    /// Full classification. On macOS the working directory is a weak signal on its own:
+    /// launchd daemons and `.app` menu-bar helpers keep theirs at `/`, so a
+    /// directory-only check drops every one of them into "mine". The executable path is
+    /// the signal that actually holds up — a *named* program (not a bare interpreter)
+    /// running out of an install location is installed software, whatever its working
+    /// directory says.
+    public static func classify(workingDirectory: String?,
+                                executablePath: String?,
+                                processName: String?) -> ServerOrigin {
+        if let executablePath, !executablePath.trimmingCharacters(in: .whitespaces).isEmpty {
+            let bare = ((processName?.isEmpty == false ? processName! : executablePath) as NSString)
+                .lastPathComponent.lowercased()
+            if !genericRuntimes.contains(bare), isUnderSystemRoot(normalise(executablePath)) {
                 return .system
             }
         }
+
+        guard let workingDirectory, !workingDirectory.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return .unknown
+        }
+        let path = normalise(workingDirectory)
+        // A launchd daemon inherits `/` as its working directory; that is not a project
+        // folder, so it stays "unknown" rather than being taken for one of yours.
+        if path == "/" { return .unknown }
+        if isUnderSystemRoot(path) { return .system }
         return .mine
+    }
+
+    private static func normalise(_ path: String) -> String {
+        path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
+    }
+
+    private static func isUnderSystemRoot(_ path: String) -> Bool {
+        for root in systemRoots {
+            if path.caseInsensitiveCompare(root) == .orderedSame
+                || path.lowercased().hasPrefix(root.lowercased() + "/") {
+                return true
+            }
+        }
+        return false
     }
 }

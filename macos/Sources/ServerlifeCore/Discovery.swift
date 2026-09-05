@@ -7,18 +7,21 @@ public struct DetectedServer: Sendable {
     public let parentPid: Int32
     public let address: String
     public let processName: String
+    public let executablePath: String?
     public let commandLine: String?
     public let workingDirectory: String?
     public let probe: ProbeResult
     public let peersOnPort: Int
 
     public init(port: Int, pid: Int32, parentPid: Int32, address: String, processName: String,
-                commandLine: String?, workingDirectory: String?, probe: ProbeResult, peersOnPort: Int = 0) {
+                executablePath: String? = nil, commandLine: String?, workingDirectory: String?,
+                probe: ProbeResult, peersOnPort: Int = 0) {
         self.port = port
         self.pid = pid
         self.parentPid = parentPid
         self.address = address
         self.processName = processName
+        self.executablePath = executablePath
         self.commandLine = commandLine
         self.workingDirectory = workingDirectory
         self.probe = probe
@@ -48,7 +51,10 @@ public struct DetectedServer: Sendable {
     /// OriginClassifier's guess.
     public var origin: ServerOrigin {
         let key = OriginOverrideStore.key(workingDirectory: workingDirectory, processName: processName)
-        return OriginOverrideStore.get(key) ?? OriginClassifier.classify(workingDirectory: workingDirectory)
+        return OriginOverrideStore.get(key)
+            ?? OriginClassifier.classify(workingDirectory: workingDirectory,
+                                         executablePath: executablePath,
+                                         processName: processName)
     }
 
     /// What the row leads with: the served page's title, else the folder name when the
@@ -153,7 +159,8 @@ public actor Discovery {
                 let info = details[pid]
                 servers.append(DetectedServer(
                     port: port, pid: pid, parentPid: info?.parentPid ?? 0, address: address,
-                    processName: info?.name ?? "unknown", commandLine: info?.commandLine,
+                    processName: info?.name ?? "unknown", executablePath: info?.executablePath,
+                    commandLine: info?.commandLine,
                     workingDirectory: info?.workingDirectory, probe: probe, peersOnPort: owners.count - 1))
             }
         }

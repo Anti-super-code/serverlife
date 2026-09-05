@@ -268,7 +268,9 @@ final class TrayViewModel: ObservableObject {
         guard let row, !row.isManaged, !row.overrideKey.isEmpty else { return }
         OriginOverrideStore.clear(row.overrideKey)
         // Re-derive from the heuristic immediately rather than waiting for the next poll.
-        row.origin = OriginClassifier.classify(workingDirectory: row.workingDirectory)
+        row.origin = OriginClassifier.classify(workingDirectory: row.workingDirectory,
+                                               executablePath: row.executablePath,
+                                               processName: row.processName)
     }
 
     func dispose() {

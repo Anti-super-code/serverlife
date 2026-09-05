@@ -154,11 +154,12 @@ struct RoundIconButtonStyle: ButtonStyle {
     }
 }
 
-/// The window's close (X) / options (cog) / info (i) buttons — same geometry, different
-/// glyph. `.info` is Serverlife's own addition, for the tray panel header button that
-/// opens the About & Settings panel (TrayWindow.xaml's new InfoButton style).
+/// The window's close (X) / options (cog) buttons — same geometry, different glyph.
+/// The tray panel's header uses `.options`: that panel holds real settings, not just an
+/// "about" blurb, so the glyph is a gear (the Windows build's InfoButton style made the
+/// same swap from a plain "i").
 struct RoundGlyphButton: View {
-    enum Kind { case close, options, info }
+    enum Kind { case close, options }
     /// `.accent` is the main window's close button: red on hover. The
     /// gallery tray's own close button uses `.neutral` instead — a darker
     /// grey — per direct feedback that a secondary/tray-level close
@@ -207,10 +208,6 @@ struct RoundGlyphButton: View {
         case .options:
             Image(systemName: "gearshape.fill")
                 .font(.system(size: size * 0.37, weight: .medium))
-                .foregroundColor(hovering ? .white : Theme.textMid)
-        case .info:
-            Image(systemName: "info")
-                .font(.system(size: size * 0.33, weight: .semibold))
                 .foregroundColor(hovering ? .white : Theme.textMid)
         }
     }

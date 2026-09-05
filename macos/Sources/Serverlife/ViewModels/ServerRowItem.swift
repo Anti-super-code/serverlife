@@ -24,6 +24,7 @@ final class ServerRowItem: ObservableObject, Identifiable {
     @Published var pid: Int32 = 0
     @Published var displayName: String = ""
     @Published var processName: String = ""
+    @Published var executablePath: String?
     @Published var workingDirectory: String?
     @Published var commandLine: String?
     @Published var url: String = ""
@@ -128,6 +129,7 @@ final class ServerRowItem: ObservableObject, Identifiable {
         // be used to restart it, and discovery only ever sees what is running right now.
         if managed == nil {
             displayName = server.displayName
+            executablePath = server.executablePath
             workingDirectory = server.workingDirectory
             commandLine = server.commandLine
             state = .running

@@ -18,75 +18,97 @@ private struct WindowAccessor: NSViewRepresentable {
     }
 }
 
-/// A thin, invisible drag strip along the window's top or bottom edge — the counterpart
-/// of TrayWindow.xaml's two new resize Border elements. WindowStyle="None" drops the
-/// OS's own resize borders along with the rest of the chrome on both platforms; Windows
-/// hands off to a native resize loop via SendMessage(WM_SYSCOMMAND) to get them back,
-/// but AppKit needs no such trick — adjusting the already-open window's own frame live
-/// during the drag is enough.
-private struct ResizeHandle: NSViewRepresentable {
+/// A thin, invisible strip along the window's top or bottom edge the user drags to
+/// resize the panel vertically — the counterpart of TrayWindow.xaml's two resize Border
+/// elements. `.borderless` drops the OS's own resize edges along with the rest of the
+/// chrome; Windows gets them back by handing off to a native resize loop, and this does
+/// the macOS equivalent: on mouse-down it pulls drag events straight off the queue with
+/// `trackEvents` and moves the window frame itself.
+///
+/// Why not a SwiftUI `DragGesture`: `WindowDragBackground` already learned that driving
+/// a window frame from `DragGesture.onChanged` visibly lags the cursor — every update
+/// round-trips through SwiftUI's render cycle first. And why `trackEvents` rather than
+/// the earlier version's `mouseDown`/`mouseDragged` pair: the hosting view's own gesture
+/// recognisers swallow `mouseDragged` before it reaches a plain child NSView, so that
+/// version recorded the press and then never saw the drag. `mouseDown` itself is
+/// delivered (the same thing `WindowDragBackground` relies on), and from inside it the
+/// tracking loop bypasses SwiftUI entirely.
+private struct ResizeGrip: NSViewRepresentable {
     enum Edge { case top, bottom }
     let edge: Edge
+    /// Called the moment the user grabs a grip, so the panel stops auto-fitting itself
+    /// to the row count and leaves the height under the user's control from then on.
+    var onManualResize: () -> Void = {}
 
-    func makeNSView(context: Context) -> DragView {
-        let view = DragView()
-        view.edge = edge
-        return view
+    func makeNSView(context: Context) -> GripView {
+        let v = GripView()
+        v.edge = edge
+        v.onManualResize = onManualResize
+        return v
     }
-    func updateNSView(_ nsView: DragView, context: Context) { nsView.edge = edge }
+    func updateNSView(_ nsView: GripView, context: Context) {
+        nsView.edge = edge
+        nsView.onManualResize = onManualResize
+    }
 
-    final class DragView: NSView {
-        var edge: Edge = .top
-        private var lastLocation: NSPoint?
+    final class GripView: NSView {
+        var edge: Edge = .bottom
+        var onManualResize: () -> Void = {}
+
+        /// Matches TrayWindow.xaml's `MinHeight="220"`.
         private static let minHeight: CGFloat = 220
 
-        override func resetCursorRects() {
-            addCursorRect(bounds, cursor: .resizeUpDown)
+        // A tracking area rather than `resetCursorRects()` / `addCursorRect`: SwiftUI's
+        // hosting view manages its own cursor rects and does not pick up a child
+        // representable's, so the resize cursor is set explicitly on enter/exit instead.
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(
+                rect: bounds,
+                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self))
         }
+
+        override func mouseEntered(with event: NSEvent) { NSCursor.resizeUpDown.set() }
+        override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
 
         override func mouseDown(with event: NSEvent) {
-            lastLocation = NSEvent.mouseLocation
-        }
+            guard let window else { return }
+            onManualResize()
+            let startMouseY = NSEvent.mouseLocation.y
+            let startFrame = window.frame
+            let maxHeight = (window.screen?.visibleFrame.height ?? NSScreen.main?.visibleFrame.height ?? 2000) - 16
+            let edge = self.edge
 
-        override func mouseDragged(with event: NSEvent) {
-            guard let window, let last = lastLocation else { return }
-            let current = NSEvent.mouseLocation
-            let deltaY = current.y - last.y
-            lastLocation = current
-
-            var frame = window.frame
-            switch edge {
-            case .bottom:
-                // The panel is anchored under its status item, so a bottom-edge drag
-                // keeps the top edge fixed and grows/shrinks downward.
-                let newHeight = max(Self.minHeight, frame.height - deltaY)
-                frame.origin.y -= (newHeight - frame.height)
-                frame.size.height = newHeight
-            case .top:
-                // A top-edge drag keeps the bottom edge fixed instead — the ordinary
-                // "extend from whichever edge you grabbed" resize.
-                let newHeight = max(Self.minHeight, frame.height + deltaY)
-                frame.size.height = newHeight
+            window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp],
+                               timeout: NSEvent.foreverDuration, mode: .eventTracking) { ev, stop in
+                guard let ev else { return }
+                if ev.type == .leftMouseUp {
+                    stop.pointee = true
+                    UserDefaults.standard.set(Double(window.frame.height),
+                                              forKey: TrayPanelWindow.heightDefaultsKey)
+                    return
+                }
+                // AppKit screen coordinates grow upward: dragging down lowers y.
+                let dy = NSEvent.mouseLocation.y - startMouseY
+                var frame = startFrame
+                switch edge {
+                case .bottom:
+                    // The panel hangs off its status item, so the top edge is the anchor:
+                    // a bottom-edge drag keeps maxY fixed and grows downward.
+                    let h = min(maxHeight, max(Self.minHeight, startFrame.height - dy))
+                    frame.origin.y = startFrame.maxY - h
+                    frame.size.height = h
+                case .top:
+                    // A top-edge drag keeps the bottom edge fixed instead.
+                    let h = min(maxHeight, max(Self.minHeight, startFrame.height + dy))
+                    frame.size.height = h
+                }
+                window.setFrame(frame, display: true)
+                window.contentView?.setFrameSize(frame.size)
             }
-            window.setFrame(frame, display: true)
-            window.contentView?.setFrameSize(frame.size)
         }
-    }
-}
-
-/// Reports InfoView's real rendered height up so the window can grow to fit it — the
-/// same PreferenceKey-summed-from-a-GeometryReader-background pattern
-/// GalleryTrayView.swift already uses for Photokompressor's gallery tray.
-private struct InfoContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-private extension View {
-    func measuringHeight(into key: InfoContentHeightKey.Type) -> some View {
-        background(GeometryReader { geo in
-            Color.clear.preference(key: InfoContentHeightKey.self, value: geo.size.height)
-        })
     }
 }
 
@@ -97,12 +119,23 @@ struct TrayPanelView: View {
     @ObservedObject var viewModel: TrayViewModel
     var onClose: () -> Void
 
+    init(viewModel: TrayViewModel, onClose: @escaping () -> Void) {
+        self.viewModel = viewModel
+        self.onClose = onClose
+        // A height the user has dragged to before is theirs to keep — don't auto-fit
+        // over it, this launch or any later one.
+        _userResized = State(initialValue:
+            UserDefaults.standard.object(forKey: TrayPanelWindow.heightDefaultsKey) != nil)
+    }
+
     @State private var hostWindow: NSWindow?
     @State private var infoShowing = false
-    @State private var heightBeforeInfo: CGFloat?
     @State private var settings = SettingsStore.load()
     @State private var shellRegistered = FinderIntegration.isRegistered()
     @State private var shellError: String?
+    /// Set once the user drags a resize grip (or on launch if they have before): from
+    /// then on the panel keeps their height instead of sizing itself to the row count.
+    @State private var userResized = false
 
     var body: some View {
         ZStack {
@@ -111,15 +144,50 @@ struct TrayPanelView: View {
                 .shadow(color: Color(hex: 0x243044, opacity: 0.22), radius: 20, x: 0, y: 6)
                 .overlay(card)
                 .padding(12)
-                .background(WindowAccessor { hostWindow = $0 })
+                .background(WindowAccessor { hostWindow = $0; fitToContent() })
 
-            VStack {
-                ResizeHandle(edge: .top).frame(height: 8)
-                Spacer()
-                ResizeHandle(edge: .bottom).frame(height: 8)
+            VStack(spacing: 0) {
+                ResizeGrip(edge: .top, onManualResize: { userResized = true }).frame(height: 12)
+                Spacer(minLength: 0)
+                ResizeGrip(edge: .bottom, onManualResize: { userResized = true }).frame(height: 12)
             }
         }
         .onExitCommand { if infoShowing { setInfoShowing(false) } }
+        .onChange(of: viewModel.visibleRows.count) { _ in fitToContent() }
+    }
+
+    /// The greatest height the panel sizes itself to, and the height the About/Settings
+    /// panel opens at — the screen permitting.
+    private func comfortableHeight(_ window: NSWindow) -> CGFloat {
+        min(TrayPanelWindow.defaultHeight, (window.screen?.visibleFrame.height ?? 1200) - 16)
+    }
+
+    /// Moves the top edge as little as possible: the panel hangs off its status item, so
+    /// the top stays put and the bottom edge is what travels.
+    private func setPanelHeight(_ height: CGFloat) {
+        guard let window = hostWindow else { return }
+        var frame = window.frame
+        frame.origin.y += (frame.height - height)
+        frame.size.height = height
+        window.setFrame(frame, display: true)
+        window.contentView?.setFrameSize(frame.size)
+    }
+
+    /// Sizes the panel to sit snugly around the visible rows — down to `minHeight`, up to
+    /// `comfortableHeight`, past which the list scrolls. Does nothing once the user has
+    /// resized by hand, or while the About/Settings panel (which scrolls internally) is up.
+    private func fitToContent() {
+        guard let window = hostWindow, !userResized, !infoShowing else { return }
+
+        // header + filter + drop zone + the card's own 12pt inset, top and bottom.
+        let chrome: CGFloat = 160
+        let rows = max(viewModel.visibleRows.count, 0)
+        let listHeight = rows == 0 ? 24 : CGFloat(rows) * 32
+        let ideal = chrome + listHeight
+
+        let target = min(max(TrayPanelWindow.minHeight, ideal), comfortableHeight(window))
+        guard abs(target - window.frame.height) > 0.5 else { return }
+        setPanelHeight(target)
     }
 
     private var card: some View {
@@ -130,8 +198,6 @@ struct TrayPanelView: View {
                          onDismiss: { setInfoShowing(false) },
                          onAlwaysOnTopChanged: { applyAlwaysOnTop($0) },
                          onShellToggled: { toggleShellRegistration($0) })
-                    .measuringHeight(into: InfoContentHeightKey.self)
-                    .onPreferenceChange(InfoContentHeightKey.self) { growForInfo($0) }
             } else {
                 filterPicker
                 rowList
@@ -149,7 +215,7 @@ struct TrayPanelView: View {
             .allowsHitTesting(false)
             Spacer()
             if !infoShowing {
-                RoundGlyphButton(kind: .info, hoverStyle: .neutral, size: 28) { setInfoShowing(true) }
+                RoundGlyphButton(kind: .options, hoverStyle: .neutral, size: 28) { setInfoShowing(true) }
                     .padding(.trailing, 6)
                 RoundGlyphButton(kind: .close, hoverStyle: .neutral, size: 28, action: onClose)
             }
@@ -241,33 +307,27 @@ struct TrayPanelView: View {
 
     // ---- about & settings ------------------------------------------------------------
 
+    /// The panel height in effect before the About/Settings panel was opened, restored
+    /// when it closes — the same bookkeeping TrayWindow.xaml.cs does with
+    /// `_heightBeforeInfo`, minus its measure-driven GrowForInfo (whose SwiftUI
+    /// equivalent measured a greedily-filling ScrollView and fed each measurement into
+    /// the next, climbing the window to the full height of the screen).
+    @State private var heightBeforeInfo: CGFloat?
+
     private func setInfoShowing(_ show: Bool) {
         withAnimation(.easeOut(duration: 0.16)) { infoShowing = show }
-        if !show { collapseFromInfo() }
-    }
-
-    private func growForInfo(_ measured: CGFloat) {
-        guard infoShowing, let window = hostWindow, measured > 0 else { return }
-        if heightBeforeInfo == nil { heightBeforeInfo = window.frame.height }
-        let maxHeight = max(220, (window.screen ?? NSScreen.main)?.visibleFrame.height ?? window.frame.height) - 16
-        let headerHeight: CGFloat = 60
-        let wanted = min(max(window.frame.height, measured + headerHeight + 24), maxHeight)
-        guard abs(wanted - window.frame.height) > 0.5 else { return }
-        var frame = window.frame
-        frame.origin.y -= (wanted - frame.height)
-        frame.size.height = wanted
-        window.setFrame(frame, display: true)
-        window.contentView?.setFrameSize(frame.size)
-    }
-
-    private func collapseFromInfo() {
-        guard let restored = heightBeforeInfo, let window = hostWindow else { return }
-        heightBeforeInfo = nil
-        var frame = window.frame
-        frame.origin.y += (frame.height - restored)
-        frame.size.height = restored
-        window.setFrame(frame, display: true)
-        window.contentView?.setFrameSize(frame.size)
+        guard let window = hostWindow else { return }
+        if show {
+            // Open the About/Settings panel at a comfortable reading height; the list
+            // often sits much shorter than that now that it fits its rows.
+            heightBeforeInfo = window.frame.height
+            let comfy = comfortableHeight(window)
+            if window.frame.height < comfy { setPanelHeight(comfy) }
+        } else {
+            if let restore = heightBeforeInfo { setPanelHeight(restore) }
+            heightBeforeInfo = nil
+            fitToContent() // the row count may have changed while the panel was up
+        }
     }
 
     private func applyAlwaysOnTop(_ enabled: Bool) {

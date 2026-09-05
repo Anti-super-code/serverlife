@@ -11,12 +11,25 @@ import SwiftUI
 final class TrayPanelWindow {
     static let defaultWidth: CGFloat = 380
     static let defaultHeight: CGFloat = 440
+    static let minHeight: CGFloat = 220
     static let shadowMargin: CGFloat = 18
+    /// `UserDefaults` key the resize grips persist the panel height under.
+    static let heightDefaultsKey = "panelHeightV1"
+
+    /// The panel reopens at whatever height the user last dragged it to (persisted by
+    /// ResizeGrip), clamped so a stale value from another display can't open it
+    /// off-screen. Falls back to `defaultHeight` on first run.
+    private static var startingHeight: CGFloat {
+        let saved = UserDefaults.standard.double(forKey: heightDefaultsKey)
+        guard saved >= Double(minHeight) else { return defaultHeight }
+        let screenHeight = (NSScreen.main?.visibleFrame.height ?? 2000) - 16
+        return min(CGFloat(saved), max(defaultHeight, screenHeight))
+    }
 
     let window: ChromelessWindow
 
     init(viewModel: TrayViewModel, alwaysOnTop: Bool, onClose: @escaping () -> Void) {
-        window = ChromelessWindow(width: Self.defaultWidth, height: Self.defaultHeight,
+        window = ChromelessWindow(width: Self.defaultWidth, height: Self.startingHeight,
                                    shadowMargin: Self.shadowMargin, alwaysOnTop: alwaysOnTop) {
             TrayPanelView(viewModel: viewModel, onClose: onClose)
         }

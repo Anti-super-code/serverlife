@@ -84,11 +84,14 @@ Serverlife $VERSION for macOS
    doesn't need to live in /Applications).
 
 2. Because this build isn't notarized by Apple, the first time you open it
-   Gatekeeper will refuse with "Apple could not verify... is free of
-   malware." Right-click (or Control-click) Serverlife.app, choose Open, then
-   click Open again in the dialog. You only need to do this once.
+   Gatekeeper will refuse with "Apple could not verify... is free of malware."
+     - Double-click Serverlife.app once and let it be blocked.
+     - Open  System Settings > Privacy & Security , scroll to the bottom, and
+       click "Open Anyway" next to the Serverlife line, then confirm.
+   (On macOS 14 and earlier you can instead right-click the app, choose Open,
+   and click Open again.) You only need to do this once.
 
-3. Click the (i) button, then switch on "Right-click menu". You can now
+3. Click the gear button, then switch on "Right-click menu". You can now
    right-click any folder in Finder and choose Start server here from Quick
    Actions.
 
@@ -100,9 +103,37 @@ the website.
 Source: https://github.com/Anti-super-code/serverlife
 INNER_EOF
 
-echo "-> codesign (ad-hoc)"
-codesign --force --sign - "$APP"
-codesign --verify --strict --verbose "$APP" 2>&1 | tail -5
+# A Developer ID signature + Apple notarisation is what actually gets the download
+# past Gatekeeper without the user having to visit System Settings. It needs a paid
+# Apple Developer account, so it only runs when the two variables below are set;
+# otherwise this falls back to the ad-hoc signature (READ-ME-FIRST covers the
+# "Open Anyway" step that unblocks that one).
+#
+#   SERVERLIFE_SIGN_ID        e.g. "Developer ID Application: Christopher Brellis (TEAMID)"
+#   SERVERLIFE_NOTARY_PROFILE name of a profile stored once with:
+#       xcrun notarytool store-credentials <name> --apple-id <id> --team-id <TEAMID> --password <app-specific-pw>
+if [ -n "${SERVERLIFE_SIGN_ID:-}" ]; then
+    echo "-> codesign (Developer ID) + hardened runtime"
+    codesign --force --options runtime --timestamp \
+        --sign "$SERVERLIFE_SIGN_ID" "$APP"
+    codesign --verify --strict --verbose "$APP" 2>&1 | tail -5
+
+    if [ -n "${SERVERLIFE_NOTARY_PROFILE:-}" ]; then
+        echo "-> notarise"
+        ZIP="$DIST/Serverlife-$VERSION.zip"
+        ditto -c -k --keepParent "$APP" "$ZIP"
+        xcrun notarytool submit "$ZIP" --keychain-profile "$SERVERLIFE_NOTARY_PROFILE" --wait
+        xcrun stapler staple "$APP"
+        rm -f "$ZIP"
+        spctl --assess --type execute --verbose "$APP" 2>&1 | tail -3
+    else
+        echo "   (SERVERLIFE_NOTARY_PROFILE not set - signed but NOT notarised)"
+    fi
+else
+    echo "-> codesign (ad-hoc)"
+    codesign --force --sign - "$APP"
+    codesign --verify --strict --verbose "$APP" 2>&1 | tail -5
+fi
 
 APP_MB=$(du -sm "$APP" | awk '{print $1}')
 
