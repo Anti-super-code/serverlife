@@ -23,12 +23,14 @@ final class ChromelessWindow: NSWindow {
     //
     // Handling it in `sendEvent(_:)` sidesteps all of that: it runs for every event
     // routed to the window, before the key-window / first-mouse gating, before SwiftUI
-    // hit-testing, before any gesture recogniser. A left-mouse-down anywhere in the
-    // transparent gutter around the visible card starts an edge drag.
+    // hit-testing, before any gesture recogniser. A left-mouse-down within
+    // `resizeGrabDepth` of any window edge starts an edge drag.
 
-    /// Width of the transparent padding around the visible card (SwiftUI `.padding(...)`).
-    /// A left-mouse-down in this outer band starts an edge resize. 0 disables it.
-    var resizeGutter: CGFloat = 0
+    /// How far in from a window edge a left-mouse-down still starts an edge resize,
+    /// in points. Set this to the transparent margin around the visible card *plus* a
+    /// few points, so a click landing right on the card's visible border still grabs.
+    /// 0 disables the behaviour.
+    var resizeGrabDepth: CGFloat = 0
     /// Lower bound applied to the card (window) size during a manual resize.
     var minResizeSize = NSSize(width: 1, height: 1)
     /// Upper bound applied to the card (window) size during a manual resize, before the
@@ -41,7 +43,15 @@ final class ChromelessWindow: NSWindow {
     /// Called with the final frame when the drag ends — the panel persists the size here.
     var onResizeEnd: ((NSRect) -> Void)?
 
-    private enum ResizeEdge { case top, bottom, left, right }
+    /// Which sides a drag is pulling. A single member is an edge drag; a horizontal
+    /// plus a vertical member is a corner drag (both dimensions at once).
+    private struct ResizeSides: OptionSet {
+        let rawValue: Int
+        static let top    = ResizeSides(rawValue: 1 << 0)
+        static let bottom = ResizeSides(rawValue: 1 << 1)
+        static let left   = ResizeSides(rawValue: 1 << 2)
+        static let right  = ResizeSides(rawValue: 1 << 3)
+    }
 
     init<Content: View>(width: CGFloat, height: CGFloat, shadowMargin: CGFloat, alwaysOnTop: Bool = true,
                          @ViewBuilder content: () -> Content) {
@@ -76,28 +86,39 @@ final class ChromelessWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown, resizeGutter > 0,
-           let edge = resizeEdge(at: event.locationInWindow) {
-            performEdgeResize(edge)
-            return
+        if event.type == .leftMouseDown, resizeGrabDepth > 0 {
+            let sides = resizeSides(at: event.locationInWindow)
+            if !sides.isEmpty {
+                performResize(sides)
+                return
+            }
         }
         super.sendEvent(event)
     }
 
-    /// Which edge (if any) a window-space point falls on, within `resizeGutter` of the
-    /// window bounds. Corners resolve to the vertical edge.
-    private func resizeEdge(at p: NSPoint) -> ResizeEdge? {
-        let g = resizeGutter
+    /// Which sides a window-space point is close enough to grab. Near one horizontal and
+    /// one vertical side at once → a corner (both returned). The top band is kept to
+    /// `resizeGrabDepth` so it clears the header buttons; the other three get a little
+    /// extra reach.
+    private func resizeSides(at p: NSPoint) -> ResizeSides {
+        let g = resizeGrabDepth
+        let generous = g + 8
         let w = frame.width, h = frame.height
-        guard p.x >= 0, p.x <= w, p.y >= 0, p.y <= h else { return nil }
-        if p.y >= h - g { return .top }
-        if p.y <= g { return .bottom }
-        if p.x <= g { return .left }
-        if p.x >= w - g { return .right }
-        return nil
+        guard p.x >= 0, p.x <= w, p.y >= 0, p.y <= h else { return [] }
+
+        var s: ResizeSides = []
+        if p.y <= generous { s.insert(.bottom) }
+        if p.y >= h - g { s.insert(.top) }
+        if p.x <= generous { s.insert(.left) }
+        if p.x >= w - generous { s.insert(.right) }
+
+        // A tiny window can flag opposite sides at once — nonsensical, so drop both.
+        if s.contains([.top, .bottom]) { s.subtract([.top, .bottom]) }
+        if s.contains([.left, .right]) { s.subtract([.left, .right]) }
+        return s
     }
 
-    private func performEdgeResize(_ edge: ResizeEdge) {
+    private func performResize(_ sides: ResizeSides) {
         if !isKeyWindow { makeKeyAndOrderFront(nil) }
         onResizeBegin?()
 
@@ -105,6 +126,7 @@ final class ChromelessWindow: NSWindow {
         let startMouse = NSEvent.mouseLocation
         let visible = screen?.visibleFrame ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 4000, height: 3000)
+        let minW = minResizeSize.width, minH = minResizeSize.height
         let maxH = min(maxResizeSize.height, visible.height - 16)
         let maxW = min(maxResizeSize.width, visible.width - 16)
 
@@ -116,28 +138,27 @@ final class ChromelessWindow: NSWindow {
                 self.onResizeEnd?(self.frame)
                 return
             }
-            // Screen coordinates grow up and to the right.
+            // Screen coordinates grow up and to the right. Each axis is independent, so
+            // a corner just applies both — the two untouched edges stay put as anchors.
             let dx = NSEvent.mouseLocation.x - startMouse.x
             let dy = NSEvent.mouseLocation.y - startMouse.y
             var f = startFrame
-            switch edge {
-            case .top:
-                // Bottom edge fixed; the top follows the cursor.
-                f.size.height = max(self.minResizeSize.height, min(maxH, startFrame.height + dy))
-            case .bottom:
-                // Top edge fixed (the panel hangs off its status item), bottom follows.
-                let nh = max(self.minResizeSize.height, min(maxH, startFrame.height - dy))
+
+            if sides.contains(.top) {
+                f.size.height = max(minH, min(maxH, startFrame.height + dy))   // bottom anchored
+            } else if sides.contains(.bottom) {
+                let nh = max(minH, min(maxH, startFrame.height - dy))          // top anchored
                 f.origin.y = startFrame.maxY - nh
                 f.size.height = nh
-            case .left:
-                // Right edge fixed (aligned under the status item), left follows.
-                let nw = max(self.minResizeSize.width, min(maxW, startFrame.width - dx))
+            }
+            if sides.contains(.right) {
+                f.size.width = max(minW, min(maxW, startFrame.width + dx))     // left anchored
+            } else if sides.contains(.left) {
+                let nw = max(minW, min(maxW, startFrame.width - dx))           // right anchored
                 f.origin.x = startFrame.maxX - nw
                 f.size.width = nw
-            case .right:
-                // Left edge fixed, right follows.
-                f.size.width = max(self.minResizeSize.width, min(maxW, startFrame.width + dx))
             }
+
             self.setFrame(f, display: true)
             self.contentView?.setFrameSize(f.size)
         }

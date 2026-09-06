@@ -57,11 +57,12 @@ final class TrayPanelWindow {
             TrayPanelView(viewModel: viewModel, onClose: onClose)
         }
 
-        // Edge-drag resize, handled in ChromelessWindow.sendEvent. The gutter matches
-        // TrayPanelView's card `.padding(12)` — the band the drag starts in is exactly
-        // the transparent margin outside the visible card, so it never overlaps a
-        // button or the row list.
-        window.resizeGutter = 12
+        // Edge-drag resize, handled in ChromelessWindow.sendEvent. 12pt covers the
+        // transparent margin around the card (TrayPanelView's `.padding(12)`); the
+        // extra 6pt reaches onto the card's visible border so a click that lands
+        // right on the edge — where people actually aim — still starts the drag.
+        // Still well clear of the header buttons (10pt in) and the list padding (14pt).
+        window.resizeGrabDepth = 18
         window.minResizeSize = NSSize(width: Self.minWidth, height: Self.minHeight)
         window.maxResizeSize = NSSize(width: Self.maxWidth, height: CGFloat.greatestFiniteMagnitude)
         window.onResizeBegin = {

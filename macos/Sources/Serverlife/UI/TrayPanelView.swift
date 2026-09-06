@@ -26,7 +26,7 @@ private struct WindowAccessor: NSViewRepresentable {
 /// cursor here is fine: tracking-area `mouseEntered` is delivered whether or not the
 /// panel is key.
 private struct ResizeGrip: NSViewRepresentable {
-    enum Edge { case top, bottom, left, right }
+    enum Edge { case top, bottom, left, right, topLeft, topRight, bottomLeft, bottomRight }
     let edge: Edge
 
     func makeNSView(context: Context) -> GripView {
@@ -41,7 +41,14 @@ private struct ResizeGrip: NSViewRepresentable {
     final class GripView: NSView {
         var edge: Edge = .bottom
 
-        private var isHorizontal: Bool { edge == .left || edge == .right }
+        private var cursor: NSCursor {
+            switch edge {
+            case .left, .right:            return .resizeLeftRight
+            case .top, .bottom:            return .resizeUpDown
+            case .topLeft, .bottomRight:   return .resizeNWSE
+            case .topRight, .bottomLeft:   return .resizeNESW
+            }
+        }
 
         // A tracking area rather than `resetCursorRects()` / `addCursorRect`: SwiftUI's
         // hosting view manages its own cursor rects and does not pick up a child
@@ -55,10 +62,19 @@ private struct ResizeGrip: NSViewRepresentable {
                 owner: self))
         }
 
-        override func mouseEntered(with event: NSEvent) {
-            (isHorizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
-        }
+        override func mouseEntered(with event: NSEvent) { cursor.set() }
         override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
+    }
+}
+
+private extension NSCursor {
+    /// AppKit ships diagonal resize cursors but only exposes them privately; every
+    /// window manager uses these. Fall back to the crosshair if the lookup ever fails.
+    static var resizeNWSE: NSCursor {
+        (NSCursor.value(forKey: "_windowResizeNorthWestSouthEastCursor") as? NSCursor) ?? .crosshair
+    }
+    static var resizeNESW: NSCursor {
+        (NSCursor.value(forKey: "_windowResizeNorthEastSouthWestCursor") as? NSCursor) ?? .crosshair
     }
 }
 
@@ -91,21 +107,48 @@ struct TrayPanelView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 16)
                 .fill(Theme.trayBg)
-                .shadow(color: Color(hex: 0x243044, opacity: 0.22), radius: 20, x: 0, y: 6)
+                // Keep the blur + offset inside the 12pt transparent margin — a larger
+                // radius gets hard-clipped to the window's rectangle and reads as a grey
+                // square "halo" around the card. A hairline edge gives back the definition
+                // the softer shadow loses.
+                .shadow(color: Color(hex: 0x243044, opacity: 0.28), radius: 7, x: 0, y: 2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Color(hex: 0x243044, opacity: 0.10), lineWidth: 1)
+                )
                 .overlay(card)
                 .padding(12)
                 .background(WindowAccessor { hostWindow = $0; fitToContent() })
 
+            // Invisible strips that only set the resize cursor; the drag itself is
+            // handled in ChromelessWindow.sendEvent. 18pt so the cursor shows over the
+            // card's visible edge too, matching the window's resizeGrabDepth.
             VStack(spacing: 0) {
-                ResizeGrip(edge: .top).frame(maxWidth: .infinity).frame(height: 12)
+                ResizeGrip(edge: .top).frame(maxWidth: .infinity).frame(height: 18)
                 Spacer(minLength: 0)
-                ResizeGrip(edge: .bottom).frame(maxWidth: .infinity).frame(height: 12)
+                ResizeGrip(edge: .bottom).frame(maxWidth: .infinity).frame(height: 18)
             }
 
             HStack(spacing: 0) {
-                ResizeGrip(edge: .left).frame(maxHeight: .infinity).frame(width: 12)
+                ResizeGrip(edge: .left).frame(maxHeight: .infinity).frame(width: 18)
                 Spacer(minLength: 0)
-                ResizeGrip(edge: .right).frame(maxHeight: .infinity).frame(width: 12)
+                ResizeGrip(edge: .right).frame(maxHeight: .infinity).frame(width: 18)
+            }
+
+            // Corner squares on top of the edge strips, so a diagonal grab reads as one
+            // and the drag resizes both dimensions.
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    ResizeGrip(edge: .topLeft).frame(width: 22, height: 22)
+                    Spacer(minLength: 0)
+                    ResizeGrip(edge: .topRight).frame(width: 22, height: 22)
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 0) {
+                    ResizeGrip(edge: .bottomLeft).frame(width: 22, height: 22)
+                    Spacer(minLength: 0)
+                    ResizeGrip(edge: .bottomRight).frame(width: 22, height: 22)
+                }
             }
         }
         .onExitCommand { if infoShowing { setInfoShowing(false) } }
