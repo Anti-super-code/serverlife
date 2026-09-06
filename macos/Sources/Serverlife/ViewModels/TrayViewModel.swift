@@ -223,6 +223,17 @@ final class TrayViewModel: ObservableObject {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: dir)
     }
 
+    /// Inline rename from the row (double-click the name). Managed rows only — a
+    /// discovered row's name is refreshed from discovery on every poll, so a rename
+    /// there wouldn't stick. Label only: the folder and command are untouched.
+    func rename(_ row: ServerRowItem?, to newName: String) {
+        guard let row, row.isManaged else { return }
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != row.displayName else { return }
+        row.managed?.name = name
+        row.displayName = name
+    }
+
     /// Takes over an external server so the watchdog covers it. It is not restarted —
     /// adopting something mid-presentation must not interrupt it.
     func manage(_ row: ServerRowItem?) {

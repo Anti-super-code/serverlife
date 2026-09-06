@@ -26,11 +26,10 @@ for arg in "$@"; do
     [ "$arg" = "--skip-tests" ] && SKIP_TESTS=1
 done
 
-# Normally kept in step with the Windows build's <Version> in
-# src/Serverlife/Serverlife.csproj; 0.1.5 is a macOS-only point release (wider tray
-# panel, edge+corner resize, PATH + port-learning fixes) that the Windows build
-# hasn't picked up yet.
-VERSION="0.1.5"
+# macOS 1.0 — first stable macOS release. The Windows build (see <Version> in
+# src/Serverlife/Serverlife.csproj) is still catching up to this feature set and
+# carries its own version number until it does.
+VERSION="1.0.0"
 APP="$DIST/Serverlife.app"
 
 echo "Packaging Serverlife $VERSION (macOS, arm64)"

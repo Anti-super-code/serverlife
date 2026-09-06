@@ -368,6 +368,14 @@ private struct ServerRowView: View {
     let viewModel: TrayViewModel
 
     @State private var hovering = false
+    @State private var editingName = false
+    @State private var draftName = ""
+    @FocusState private var nameFocused: Bool
+
+    private func commitRename() {
+        editingName = false
+        viewModel.rename(row, to: draftName)
+    }
 
     var body: some View {
         ZStack {
@@ -376,9 +384,29 @@ private struct ServerRowView: View {
                 Text(verbatim: "\(row.port)")
                     .font(Theme.font(size: 11.5)).foregroundColor(Theme.textMid)
                     .frame(minWidth: 38, alignment: .leading).padding(.leading, 8).padding(.trailing, 8)
-                Text(row.displayName)
-                    .font(Theme.font(size: 12.5)).foregroundColor(Theme.textHi)
-                    .lineLimit(1).truncationMode(.tail)
+                if editingName {
+                    TextField("", text: $draftName)
+                        .textFieldStyle(.plain)
+                        .font(Theme.font(size: 12.5)).foregroundColor(Theme.textHi)
+                        .focused($nameFocused)
+                        .frame(maxWidth: 220)
+                        .onSubmit { commitRename() }
+                        .onExitCommand { editingName = false }
+                        .onChange(of: nameFocused) { focused in
+                            if !focused { commitRename() }
+                        }
+                } else {
+                    Text(row.displayName)
+                        .font(Theme.font(size: 12.5)).foregroundColor(Theme.textHi)
+                        .lineLimit(1).truncationMode(.tail)
+                        .help(row.isManaged ? "Double-click to rename" : row.tooltip)
+                        .onTapGesture(count: 2) {
+                            guard row.isManaged else { return }
+                            draftName = row.displayName
+                            editingName = true
+                            DispatchQueue.main.async { nameFocused = true }
+                        }
+                }
                 Spacer(minLength: 4)
                 if row.isSystem {
                     Text("system").font(Theme.font(size: 9.5)).foregroundColor(Theme.textLo).padding(.trailing, 6)
