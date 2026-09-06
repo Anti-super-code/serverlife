@@ -318,11 +318,13 @@ struct TrayPanelView: View {
         withAnimation(.easeOut(duration: 0.16)) { infoShowing = show }
         guard let window = hostWindow else { return }
         if show {
-            // Open the About/Settings panel at a comfortable reading height; the list
-            // often sits much shorter than that now that it fits its rows.
+            // Open the About/Settings panel tall enough to show its blurb and both
+            // toggles without scrolling — the list is often much shorter than this now
+            // that it fits its rows. Never shrink a panel the user dragged taller.
             heightBeforeInfo = window.frame.height
-            let comfy = comfortableHeight(window)
-            if window.frame.height < comfy { setPanelHeight(comfy) }
+            let screenCap = (window.screen?.visibleFrame.height ?? 1200) - 16
+            let target = min(TrayPanelWindow.infoHeight, screenCap)
+            if window.frame.height < target { setPanelHeight(target) }
         } else {
             if let restore = heightBeforeInfo { setPanelHeight(restore) }
             heightBeforeInfo = nil

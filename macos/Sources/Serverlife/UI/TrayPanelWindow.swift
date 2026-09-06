@@ -12,6 +12,10 @@ final class TrayPanelWindow {
     static let defaultWidth: CGFloat = 380
     static let defaultHeight: CGFloat = 440
     static let minHeight: CGFloat = 220
+    /// Height the About/Settings panel opens at: tall enough that the blurb *and* both
+    /// toggle rows are on screen without scrolling the inner list. Clamped to the
+    /// visible screen height when it's actually applied (see `setInfoShowing`).
+    static let infoHeight: CGFloat = 680
     static let shadowMargin: CGFloat = 18
     /// `UserDefaults` key the resize grips persist the panel height under.
     static let heightDefaultsKey = "panelHeightV1"

@@ -1,11 +1,16 @@
 #!/bin/bash
 # Builds the macOS download that goes on the website: a self-contained
-# Serverlife.app (Apple Silicon only), ad-hoc signed — the macOS counterpart of
-# package.ps1. No .dmg here (unlike Photokompressor's own packaging script) —
-# just the app bundle, staged and ready to zip or hand out directly.
+# Serverlife.app (Apple Silicon only) wrapped in a drag-to-Applications .dmg —
+# the macOS counterpart of package.ps1. Ad-hoc signed by default; Developer ID
+# signed + notarised when the two env vars near the bottom are set.
 #
 #   bash build/package-mac.sh
 #   bash build/package-mac.sh --skip-tests   # only when you already ran them
+#
+# Output in dist-mac/ (not committed):
+#   Serverlife.app                          the staged bundle
+#   Serverlife-<version>-mac-arm64.dmg      the website download, + .sha256
+#   serverlife-cli                          the headless binary
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -80,8 +85,9 @@ cat > "$DIST/READ-ME-FIRST.txt" << INNER_EOF
 Serverlife $VERSION for macOS
 ==============================
 
-1. Drag Serverlife.app to Applications (or run it from wherever you put it - it
-   doesn't need to live in /Applications).
+1. Open Serverlife-$VERSION-mac-arm64.dmg and drag Serverlife.app onto the
+   Applications shortcut in the same window (or run it from wherever you put it -
+   it doesn't need to live in /Applications). Then eject the disk image.
 
 2. Because this build isn't notarized by Apple, the first time you open it
    Gatekeeper will refuse with "Apple could not verify... is free of malware."
@@ -112,31 +118,104 @@ INNER_EOF
 #   SERVERLIFE_SIGN_ID        e.g. "Developer ID Application: Christopher Brellis (TEAMID)"
 #   SERVERLIFE_NOTARY_PROFILE name of a profile stored once with:
 #       xcrun notarytool store-credentials <name> --apple-id <id> --team-id <TEAMID> --password <app-specific-pw>
+NOTARISED=0
 if [ -n "${SERVERLIFE_SIGN_ID:-}" ]; then
     echo "-> codesign (Developer ID) + hardened runtime"
     codesign --force --options runtime --timestamp \
         --sign "$SERVERLIFE_SIGN_ID" "$APP"
     codesign --verify --strict --verbose "$APP" 2>&1 | tail -5
-
-    if [ -n "${SERVERLIFE_NOTARY_PROFILE:-}" ]; then
-        echo "-> notarise"
-        ZIP="$DIST/Serverlife-$VERSION.zip"
-        ditto -c -k --keepParent "$APP" "$ZIP"
-        xcrun notarytool submit "$ZIP" --keychain-profile "$SERVERLIFE_NOTARY_PROFILE" --wait
-        xcrun stapler staple "$APP"
-        rm -f "$ZIP"
-        spctl --assess --type execute --verbose "$APP" 2>&1 | tail -3
-    else
-        echo "   (SERVERLIFE_NOTARY_PROFILE not set - signed but NOT notarised)"
-    fi
+    [ -n "${SERVERLIFE_NOTARY_PROFILE:-}" ] && NOTARISED=1
 else
     echo "-> codesign (ad-hoc)"
     codesign --force --sign - "$APP"
     codesign --verify --strict --verbose "$APP" 2>&1 | tail -5
 fi
 
+echo "-> build .dmg"
+DMG="$DIST/Serverlife-$VERSION-mac-arm64.dmg"
+VOLNAME="Serverlife $VERSION"
+STAGE="$DIST/.dmg-stage"
+RW_DMG="$DIST/.dmg-rw.dmg"
+rm -rf "$STAGE" "$RW_DMG" "$DMG"
+mkdir -p "$STAGE"
+cp -R "$APP" "$STAGE/Serverlife.app"
+ln -s /Applications "$STAGE/Applications"
+cp "$DIST/READ-ME-FIRST.txt" "$STAGE/READ-ME-FIRST.txt"
+cp "$DIST/LICENSE" "$STAGE/LICENSE"
+
+# Build a read/write image first so Finder can arrange the icons, then convert it
+# to a compressed read-only .dmg for the website.
+hdiutil create -volname "$VOLNAME" -srcfolder "$STAGE" -fs HFS+ \
+    -format UDRW -ov "$RW_DMG" >/dev/null
+rm -rf "$STAGE"
+
+MOUNT_DIR="$(mktemp -d)"
+hdiutil attach "$RW_DMG" -mountpoint "$MOUNT_DIR" -nobrowse -noverify -noautoopen >/dev/null
+
+# Stand Serverlife.app and the Applications alias side by side in an icon-view
+# window the user drags between — the layout every Mac download uses. Best-effort:
+# it needs a Finder that can be scripted (an ordinary desktop login), and is
+# skipped without complaint on a headless build box (the alias still works, the
+# window just opens unstyled).
+if osascript >/dev/null 2>&1 <<APPLESCRIPT
+tell application "Finder"
+    tell disk "$VOLNAME"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {200, 120, 740, 470}
+        set opts to the icon view options of container window
+        set arrangement of opts to not arranged
+        set icon size of opts to 112
+        set text size of opts to 12
+        set position of item "Serverlife.app" of container window to {140, 175}
+        set position of item "Applications" of container window to {400, 175}
+        set position of item "READ-ME-FIRST.txt" of container window to {140, 330}
+        set position of item "LICENSE" of container window to {400, 330}
+        update without registering applications
+        delay 1
+        close
+    end tell
+end tell
+APPLESCRIPT
+then
+    echo "   icon layout set"
+else
+    echo "   (Finder not scriptable here - .dmg ships without the custom icon layout)"
+fi
+
+sync
+hdiutil detach "$MOUNT_DIR" >/dev/null 2>&1 || hdiutil detach "$MOUNT_DIR" -force >/dev/null 2>&1 || true
+rmdir "$MOUNT_DIR" 2>/dev/null || true
+
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -ov -o "$DMG" >/dev/null
+rm -f "$RW_DMG"
+
+# Notarisation staples the .dmg itself, so the download is trusted before it's
+# even opened. A Developer ID signature + a paid Apple Developer account is what
+# this needs; without it the ad-hoc build still ships, and READ-ME-FIRST covers
+# the one-time "Open Anyway" step in System Settings that unblocks it.
+#
+#   SERVERLIFE_SIGN_ID        e.g. "Developer ID Application: Christopher Brellis (TEAMID)"
+#   SERVERLIFE_NOTARY_PROFILE name of a profile stored once with:
+#       xcrun notarytool store-credentials <name> --apple-id <id> --team-id <TEAMID> --password <app-specific-pw>
+if [ "$NOTARISED" -eq 1 ]; then
+    echo "-> notarise .dmg"
+    xcrun notarytool submit "$DMG" --keychain-profile "$SERVERLIFE_NOTARY_PROFILE" --wait
+    xcrun stapler staple "$DMG"
+    spctl --assess --type open --context context:primary-signature --verbose "$DMG" 2>&1 | tail -3
+else
+    echo "   (not notarised - website copy needs the 'Open Anyway' step in READ-ME-FIRST)"
+fi
+
+shasum -a 256 "$DMG" | awk '{print $1}' > "$DMG.sha256"
+
 APP_MB=$(du -sm "$APP" | awk '{print $1}')
+DMG_MB=$(du -sm "$DMG" | awk '{print $1}')
 
 echo
-echo "  app       $APP"
-echo "  size      ${APP_MB} MB"
+echo "  app       $APP  (${APP_MB} MB)"
+echo "  dmg       $DMG  (${DMG_MB} MB)"
+echo "  sha256    $(cat "$DMG.sha256")"
+[ "$NOTARISED" -eq 1 ] && echo "  notarised yes" || echo "  notarised no (ad-hoc)"

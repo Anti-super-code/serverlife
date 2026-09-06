@@ -30,7 +30,7 @@ Both apps work end to end.
 | Adopt an externally started server | ✅ Windows | ✅ macOS |
 | Right-click "Start server here" | ✅ Windows (Explorer verb) | ✅ macOS (Finder Quick Action) |
 | Single-instance folder handoff | ✅ Windows (mutex/pipe) | ✅ macOS (free — `LSMultipleInstancesProhibited`) |
-| Packaging (sha256 beside every artifact) | ✅ Windows — portable zip **and** an installer (`build/package.ps1`) | ✅ macOS app (`build/package-mac.sh`) |
+| Packaging (sha256 beside every artifact) | ✅ Windows — portable zip **and** an installer (`build/package.ps1`) | ✅ macOS — drag-to-Applications `.dmg` (`build/package-mac.sh`) |
 | Automated tests | not yet — `tests/` is a placeholder | ✅ macOS (`macos/Tests/ServerlifeCoreTests`) |
 | Launch-at-login | not yet | not yet |
 | CI / notarization | not yet | not yet |
@@ -162,9 +162,18 @@ macOS:
 bash build/package-mac.sh
 ```
 
-Builds both the app and `serverlife-cli`, assembles a self-contained, ad-hoc-signed
-`Serverlife.app` with its own `.icns` and bundled fonts, and bundles `LICENSE` and a
-`READ-ME-FIRST.txt` beside it — into `dist-mac/`, not committed.
+Builds both the app and `serverlife-cli`, assembles a self-contained `Serverlife.app` with
+its own `.icns` and bundled fonts, and wraps it in a drag-to-Applications disk image —
+into `dist-mac/`, not committed:
+
+- **`Serverlife-<version>-mac-arm64.dmg`** — the website download (Apple Silicon only),
+  with a `.sha256` beside it. Carries `Serverlife.app`, an `/Applications` shortcut,
+  `LICENSE` and a `READ-ME-FIRST.txt`.
+
+Ad-hoc signed by default — the first launch then needs a one-time **System Settings →
+Privacy & Security → Open Anyway** (covered in `READ-ME-FIRST.txt`). Set
+`SERVERLIFE_SIGN_ID` and `SERVERLIFE_NOTARY_PROFILE` before running to Developer ID sign
+and Apple-notarise the `.dmg` instead, which removes that step for downloaders.
 
 ## Licence
 
