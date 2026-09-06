@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    /// Posted by ChromelessWindow when the user starts an edge-drag resize, so
+    /// TrayPanelView stops auto-fitting the panel height to the row count.
+    static let serverlifePanelManuallyResized = Notification.Name("serverlifePanelManuallyResized")
+}
+
 /// Wraps a ChromelessWindow (reused unchanged from Photokompressor) to host the tray
 /// panel, adding what that generic constructor doesn't provide: positioning under the
 /// status item button rather than near the cursor. Resizing (drag grips, and growing to
@@ -49,6 +55,21 @@ final class TrayPanelWindow {
         window = ChromelessWindow(width: Self.startingWidth, height: Self.startingHeight,
                                    shadowMargin: Self.shadowMargin, alwaysOnTop: alwaysOnTop) {
             TrayPanelView(viewModel: viewModel, onClose: onClose)
+        }
+
+        // Edge-drag resize, handled in ChromelessWindow.sendEvent. The gutter matches
+        // TrayPanelView's card `.padding(12)` — the band the drag starts in is exactly
+        // the transparent margin outside the visible card, so it never overlaps a
+        // button or the row list.
+        window.resizeGutter = 12
+        window.minResizeSize = NSSize(width: Self.minWidth, height: Self.minHeight)
+        window.maxResizeSize = NSSize(width: Self.maxWidth, height: CGFloat.greatestFiniteMagnitude)
+        window.onResizeBegin = {
+            NotificationCenter.default.post(name: .serverlifePanelManuallyResized, object: nil)
+        }
+        window.onResizeEnd = { frame in
+            UserDefaults.standard.set(Double(frame.width), forKey: Self.widthDefaultsKey)
+            UserDefaults.standard.set(Double(frame.height), forKey: Self.heightDefaultsKey)
         }
     }
 
