@@ -30,7 +30,7 @@ Both apps work end to end.
 | Adopt an externally started server | ✅ Windows | ✅ macOS |
 | Right-click "Start server here" | ✅ Windows (Explorer verb) | ✅ macOS (Finder Quick Action) |
 | Single-instance folder handoff | ✅ Windows (mutex/pipe) | ✅ macOS (free — `LSMultipleInstancesProhibited`) |
-| Packaging (zip/app + sha256) | ✅ Windows (`build/package.ps1`) | ✅ macOS (`build/package-mac.sh`) |
+| Packaging (sha256 beside every artifact) | ✅ Windows — portable zip **and** an installer (`build/package.ps1`) | ✅ macOS app (`build/package-mac.sh`) |
 | Automated tests | not yet — `tests/` is a placeholder | ✅ macOS (`macos/Tests/ServerlifeCoreTests`) |
 | Launch-at-login | not yet | not yet |
 | CI / notarization | not yet | not yet |
@@ -126,6 +126,7 @@ macos/              macOS app — Swift / SwiftUI, SwiftPM
                       Tests/ServerlifeCoreTests
 tests/              placeholder — nothing here yet
 build/              packaging scripts, one per platform (package.ps1, package-mac.sh)
+                      installer/               Inno Setup script + generated wizard art
 ```
 
 ## Building a release
@@ -133,12 +134,27 @@ build/              packaging scripts, one per platform (package.ps1, package-ma
 Windows:
 
 ```
-build\package.ps1
+build\package.ps1                  # both downloads
+build\package.ps1 -SkipInstaller   # zip only, no Inno Setup needed
 ```
 
-Publishes framework-dependent (needs the .NET 8 Desktop Runtime, not bundled), bundles
-`LICENSE` and `THIRD-PARTY-NOTICES.md`, writes a `READ-ME-FIRST.txt`, and zips the result
-with a `.sha256` beside it — into `dist/`, not committed.
+Publishes framework-dependent (needs the .NET 8 Desktop Runtime, not bundled) and produces
+two things in `dist/`, not committed, each with a `.sha256` beside it:
+
+- **`Serverlife-<version>-win-x64.zip`** — the published folder plus `LICENSE`,
+  `THIRD-PARTY-NOTICES.md` and a `READ-ME-FIRST.txt`. Extract-and-run, for people who
+  want no installer.
+- **`Serverlife-Setup-<version>.exe`** — an [Inno Setup](https://jrsoftware.org/isinfo.php)
+  installer (`build/installer/serverlife.iss`, modern wizard, art from
+  `make-wizard-art.py`). Installs per-user to `%LOCALAPPDATA%\Programs\Serverlife` with no
+  admin, Start-menu shortcut and an entry in Add/Remove Programs. It carries only the
+  ~1 MB app: on a machine **without** the .NET 8 Desktop Runtime it downloads that from
+  Microsoft during setup, and on one that already has it nothing extra is fetched. A
+  checkbox (off by default) registers the "Start server here" Explorer verb by calling the
+  app's own `--register-shell`; uninstall calls `--unregister-shell`.
+
+The installer step needs Inno Setup 6 — `winget install JRSoftware.InnoSetup`. Without it,
+`package.ps1` warns and builds just the zip.
 
 macOS:
 

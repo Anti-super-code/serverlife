@@ -1,18 +1,25 @@
 <#
 .SYNOPSIS
-    Builds the download that goes on the website: a framework-dependent x64 folder,
-    zipped, with a SHA-256 beside it.
+    Builds the two downloads that go on the website, both framework-dependent x64:
+      - a zip of the published folder, with a SHA-256 beside it
+      - Serverlife-Setup-<version>.exe, an Inno Setup installer that fetches the
+        .NET 8 Desktop Runtime from Microsoft only if the machine lacks it
 
 .DESCRIPTION
     Run from anywhere; paths are resolved relative to the repository root.
     Output lands in dist\ and is not committed.
 
         pwsh build\package.ps1
-        pwsh build\package.ps1 -SkipTests     # only when you already ran them
+        pwsh build\package.ps1 -SkipTests        # only when you already ran them
+        pwsh build\package.ps1 -SkipInstaller    # zip only, no ISCC needed
+
+    The installer step needs Inno Setup 6 (ISCC.exe). Install it with:
+        winget install JRSoftware.InnoSetup
 #>
 [CmdletBinding()]
 param(
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$SkipInstaller
 )
 
 $ErrorActionPreference = 'Stop'
@@ -95,3 +102,35 @@ Write-Host ''
 Write-Host "  zip       $zip" -ForegroundColor Green
 Write-Host "  download  $zipMb MB   (extracts to $folderMb MB)"
 Write-Host "  sha256    $hash"
+
+if (-not $SkipInstaller) {
+    Write-Host ''
+    Write-Host '-> installer'
+
+    $iscc = @(
+        (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue).Path
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+        (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe')
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
+    if (-not $iscc) {
+        Write-Warning 'Inno Setup (ISCC.exe) not found - skipping the installer.'
+        Write-Warning 'Install it with:  winget install JRSoftware.InnoSetup'
+    }
+    else {
+        $iss = Join-Path $PSScriptRoot 'installer\serverlife.iss'
+        & $iscc /Qp "/DAppVersion=$version" "/DStageDir=$stage" "/DOutDir=$dist" $iss
+        if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
+
+        $setup = Join-Path $dist "Serverlife-Setup-$version.exe"
+        $setupHash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+        "$setupHash  Serverlife-Setup-$version.exe" | Set-Content "$setup.sha256" -Encoding ascii
+        $setupMb = [math]::Round((Get-Item $setup).Length / 1MB, 1)
+
+        Write-Host ''
+        Write-Host "  setup     $setup" -ForegroundColor Green
+        Write-Host "  download  $setupMb MB   (+ ~60 MB .NET runtime, fetched only if missing)"
+        Write-Host "  sha256    $setupHash"
+    }
+}

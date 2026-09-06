@@ -35,6 +35,19 @@ public partial class App : Application
             return;
         }
 
+        // The Windows installer's "right-click menu" checkbox shells out to these, so the
+        // verb has exactly one definition (ShellRegistration) instead of a second copy
+        // living in the .iss script. Also used by the uninstaller to take the verb back out.
+        if (e.Args.FirstOrDefault() is "--register-shell" or "--unregister-shell")
+        {
+            if (e.Args[0] == "--register-shell")
+                ShellRegistration.Register();
+            else
+                ShellRegistration.Unregister();
+            Shutdown(0);
+            return;
+        }
+
         var folderArg = e.Args.FirstOrDefault(Directory.Exists) is { } f ? Path.GetFullPath(f) : null;
 
         // Serverlife is resident, but the "Start server here" Explorer verb launches a new
