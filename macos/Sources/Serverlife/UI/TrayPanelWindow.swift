@@ -9,7 +9,9 @@ import SwiftUI
 /// handed a reference from outside.
 @MainActor
 final class TrayPanelWindow {
-    static let defaultWidth: CGFloat = 380
+    static let defaultWidth: CGFloat = 460
+    static let minWidth: CGFloat = 340
+    static let maxWidth: CGFloat = 760
     static let defaultHeight: CGFloat = 440
     static let minHeight: CGFloat = 220
     /// Height the About/Settings panel opens at: tall enough that the blurb *and* both
@@ -17,8 +19,9 @@ final class TrayPanelWindow {
     /// visible screen height when it's actually applied (see `setInfoShowing`).
     static let infoHeight: CGFloat = 680
     static let shadowMargin: CGFloat = 18
-    /// `UserDefaults` key the resize grips persist the panel height under.
+    /// `UserDefaults` keys the resize grips persist the panel size under.
     static let heightDefaultsKey = "panelHeightV1"
+    static let widthDefaultsKey = "panelWidthV1"
 
     /// The panel reopens at whatever height the user last dragged it to (persisted by
     /// ResizeGrip), clamped so a stale value from another display can't open it
@@ -30,10 +33,20 @@ final class TrayPanelWindow {
         return min(CGFloat(saved), max(defaultHeight, screenHeight))
     }
 
+    /// Same idea as `startingHeight`: reopen at the user's last dragged width, clamped
+    /// so a stale value from a wider display can't open it off-screen. Falls back to
+    /// `defaultWidth` on first run.
+    private static var startingWidth: CGFloat {
+        let saved = UserDefaults.standard.double(forKey: widthDefaultsKey)
+        guard saved >= Double(minWidth) else { return defaultWidth }
+        let screenWidth = (NSScreen.main?.visibleFrame.width ?? 3000) - 16
+        return min(CGFloat(saved), min(maxWidth, max(defaultWidth, screenWidth)))
+    }
+
     let window: ChromelessWindow
 
     init(viewModel: TrayViewModel, alwaysOnTop: Bool, onClose: @escaping () -> Void) {
-        window = ChromelessWindow(width: Self.defaultWidth, height: Self.startingHeight,
+        window = ChromelessWindow(width: Self.startingWidth, height: Self.startingHeight,
                                    shadowMargin: Self.shadowMargin, alwaysOnTop: alwaysOnTop) {
             TrayPanelView(viewModel: viewModel, onClose: onClose)
         }

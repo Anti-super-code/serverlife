@@ -18,9 +18,9 @@ private struct WindowAccessor: NSViewRepresentable {
     }
 }
 
-/// A thin, invisible strip along the window's top or bottom edge the user drags to
-/// resize the panel vertically — the counterpart of TrayWindow.xaml's two resize Border
-/// elements. `.borderless` drops the OS's own resize edges along with the rest of the
+/// A thin, invisible strip along one of the window's edges the user drags to resize the
+/// panel — top/bottom for height, left/right for width. The counterpart of
+/// TrayWindow.xaml's resize Border elements. `.borderless` drops the OS's own resize edges along with the rest of the
 /// chrome; Windows gets them back by handing off to a native resize loop, and this does
 /// the macOS equivalent: on mouse-down it pulls drag events straight off the queue with
 /// `trackEvents` and moves the window frame itself.
@@ -34,10 +34,11 @@ private struct WindowAccessor: NSViewRepresentable {
 /// delivered (the same thing `WindowDragBackground` relies on), and from inside it the
 /// tracking loop bypasses SwiftUI entirely.
 private struct ResizeGrip: NSViewRepresentable {
-    enum Edge { case top, bottom }
+    enum Edge { case top, bottom, left, right }
     let edge: Edge
     /// Called the moment the user grabs a grip, so the panel stops auto-fitting itself
     /// to the row count and leaves the height under the user's control from then on.
+    /// Only wired up for the vertical grips — a width drag doesn't disturb height auto-fit.
     var onManualResize: () -> Void = {}
 
     func makeNSView(context: Context) -> GripView {
@@ -58,6 +59,8 @@ private struct ResizeGrip: NSViewRepresentable {
         /// Matches TrayWindow.xaml's `MinHeight="220"`.
         private static let minHeight: CGFloat = 220
 
+        private var isHorizontal: Bool { edge == .left || edge == .right }
+
         // A tracking area rather than `resetCursorRects()` / `addCursorRect`: SwiftUI's
         // hosting view manages its own cursor rects and does not pick up a child
         // representable's, so the resize cursor is set explicitly on enter/exit instead.
@@ -70,15 +73,21 @@ private struct ResizeGrip: NSViewRepresentable {
                 owner: self))
         }
 
-        override func mouseEntered(with event: NSEvent) { NSCursor.resizeUpDown.set() }
+        override func mouseEntered(with event: NSEvent) {
+            (isHorizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
+        }
         override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
 
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
             onManualResize()
-            let startMouseY = NSEvent.mouseLocation.y
+            let startMouse = NSEvent.mouseLocation
             let startFrame = window.frame
-            let maxHeight = (window.screen?.visibleFrame.height ?? NSScreen.main?.visibleFrame.height ?? 2000) - 16
+            let visible = window.screen?.visibleFrame
+                ?? NSScreen.main?.visibleFrame
+                ?? NSRect(x: 0, y: 0, width: 3000, height: 2000)
+            let maxHeight = visible.height - 16
+            let maxWidth = min(TrayPanelWindow.maxWidth, visible.width - 16)
             let edge = self.edge
 
             window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp],
@@ -88,10 +97,14 @@ private struct ResizeGrip: NSViewRepresentable {
                     stop.pointee = true
                     UserDefaults.standard.set(Double(window.frame.height),
                                               forKey: TrayPanelWindow.heightDefaultsKey)
+                    UserDefaults.standard.set(Double(window.frame.width),
+                                              forKey: TrayPanelWindow.widthDefaultsKey)
                     return
                 }
-                // AppKit screen coordinates grow upward: dragging down lowers y.
-                let dy = NSEvent.mouseLocation.y - startMouseY
+                // AppKit screen coordinates grow upward and rightward: dragging down
+                // lowers y, dragging left lowers x.
+                let dx = NSEvent.mouseLocation.x - startMouse.x
+                let dy = NSEvent.mouseLocation.y - startMouse.y
                 var frame = startFrame
                 switch edge {
                 case .bottom:
@@ -104,6 +117,16 @@ private struct ResizeGrip: NSViewRepresentable {
                     // A top-edge drag keeps the bottom edge fixed instead.
                     let h = min(maxHeight, max(Self.minHeight, startFrame.height + dy))
                     frame.size.height = h
+                case .left:
+                    // The panel is right-aligned under its status item, so the right edge
+                    // is the anchor: a left-edge drag keeps maxX fixed and grows leftward.
+                    let w = min(maxWidth, max(TrayPanelWindow.minWidth, startFrame.width - dx))
+                    frame.origin.x = startFrame.maxX - w
+                    frame.size.width = w
+                case .right:
+                    // A right-edge drag keeps the left edge fixed instead.
+                    let w = min(maxWidth, max(TrayPanelWindow.minWidth, startFrame.width + dx))
+                    frame.size.width = w
                 }
                 window.setFrame(frame, display: true)
                 window.contentView?.setFrameSize(frame.size)
@@ -150,6 +173,12 @@ struct TrayPanelView: View {
                 ResizeGrip(edge: .top, onManualResize: { userResized = true }).frame(height: 12)
                 Spacer(minLength: 0)
                 ResizeGrip(edge: .bottom, onManualResize: { userResized = true }).frame(height: 12)
+            }
+
+            HStack(spacing: 0) {
+                ResizeGrip(edge: .left).frame(width: 12)
+                Spacer(minLength: 0)
+                ResizeGrip(edge: .right).frame(width: 12)
             }
         }
         .onExitCommand { if infoShowing { setInfoShowing(false) } }

@@ -26,8 +26,10 @@ for arg in "$@"; do
     [ "$arg" = "--skip-tests" ] && SKIP_TESTS=1
 done
 
-# Kept in step with the Windows build's <Version> in src/Serverlife/Serverlife.csproj.
-VERSION="0.1.0"
+# Normally kept in step with the Windows build's <Version> in
+# src/Serverlife/Serverlife.csproj; 0.1.1 is a macOS-only point release (resizable
+# tray panel) that the Windows build hasn't picked up yet.
+VERSION="0.1.1"
 APP="$DIST/Serverlife.app"
 
 echo "Packaging Serverlife $VERSION (macOS, arm64)"
