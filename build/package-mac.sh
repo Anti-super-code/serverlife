@@ -27,10 +27,10 @@ for arg in "$@"; do
 done
 
 # Normally kept in step with the Windows build's <Version> in
-# src/Serverlife/Serverlife.csproj; 0.1.3 is a macOS-only point release (wider tray
-# panel, working edge-drag resize, no shadow halo) that the Windows build
+# src/Serverlife/Serverlife.csproj; 0.1.4 is a macOS-only point release (wider tray
+# panel, edge+corner resize, port-learning fix) that the Windows build
 # hasn't picked up yet.
-VERSION="0.1.3"
+VERSION="0.1.4"
 APP="$DIST/Serverlife.app"
 
 echo "Packaging Serverlife $VERSION (macOS, arm64)"

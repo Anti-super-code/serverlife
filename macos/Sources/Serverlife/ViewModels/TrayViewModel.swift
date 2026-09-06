@@ -98,8 +98,16 @@ final class TrayViewModel: ObservableObject {
 
     private func merge(_ servers: [DetectedServer]) {
         var managedByPort: [Int: ManagedServer] = [:]
+        // Managed servers we haven't tied to a port yet, keyed by their folder — used
+        // below to adopt a listener discovered running out of that exact folder.
+        var unlinkedManagedByDir: [String: ManagedServer] = [:]
         for s in supervisor.servers {
-            if let port = s.port { managedByPort[port] = s }
+            if let port = s.port {
+                managedByPort[port] = s
+            } else {
+                let dir = Self.canonicalDir(s.directory)
+                if !dir.isEmpty { unlinkedManagedByDir[dir] = s }
+            }
         }
 
         // A managed server owns exactly one row for its whole life, whether or not it
@@ -121,6 +129,21 @@ final class TrayViewModel: ObservableObject {
             // Discovered a port a managed server owns: fold the detail into that
             // server's existing row instead of making a second one.
             if let owner = managedByPort[server.port], let ownerRow = managedRows[ObjectIdentifier(owner)] {
+                ownerRow.apply(server)
+                continue
+            }
+
+            // A managed server we haven't tied to a port yet, but this listener is
+            // running out of its exact folder — almost certainly the same thing. Adopt
+            // the port so the row gets its URL and the watchdog can health-check it by
+            // port instead of guessing at the process tree. Covers "npm run dev", where
+            // the socket is a grandchild the process-group check can miss, and a server
+            // started by hand from an editor in that folder.
+            if let dir = server.workingDirectory.map(Self.canonicalDir), !dir.isEmpty,
+               let owner = unlinkedManagedByDir[dir], let ownerRow = managedRows[ObjectIdentifier(owner)] {
+                owner.port = server.port
+                managedByPort[server.port] = owner
+                unlinkedManagedByDir.removeValue(forKey: dir)
                 ownerRow.apply(server)
                 continue
             }
@@ -157,6 +180,14 @@ final class TrayViewModel: ObservableObject {
         for row in rows where row.managed != nil {
             row.syncFromManaged()
         }
+    }
+
+    /// Absolute, symlink-resolved path, for comparing a managed server's folder against
+    /// a discovered process's working directory without tripping over `…/tmp` vs
+    /// `…/private/tmp` or a trailing slash.
+    private static func canonicalDir(_ path: String?) -> String {
+        guard let path, !path.trimmingCharacters(in: .whitespaces).isEmpty else { return "" }
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
     private func updateSummary() {
