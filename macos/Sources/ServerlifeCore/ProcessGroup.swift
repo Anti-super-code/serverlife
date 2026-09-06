@@ -48,7 +48,12 @@ public final class ProcessGroup {
 
         var childPid: pid_t = 0
         let argv: [String?] = ["/bin/sh", "-c", command, nil]
-        let envp: [String?] = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" } + [nil]
+        // PATH is forced to the login shell's, so `npm`/`node`/`pnpm` from nvm, Homebrew
+        // or Volta resolve even though a Dock-launched app inherits only the bare system
+        // PATH — without this, `npm run dev` dies with "command not found" and the server
+        // never starts.
+        let envp: [String?] = LoginShellEnvironment.augmentedEnvironment()
+            .map { "\($0.key)=\($0.value)" } + [nil]
 
         let spawnResult = argv.withCStrings { argvC in
             envp.withCStrings { envpC in
