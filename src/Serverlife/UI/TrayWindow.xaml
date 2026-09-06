@@ -4,7 +4,8 @@
         xmlns:local="clr-namespace:Serverlife.UI"
         xmlns:vm="clr-namespace:Serverlife.ViewModels"
         Title="Serverlife"
-        Width="380" Height="440" MinHeight="220"
+        Width="412" Height="472"
+        MinWidth="360" MinHeight="252" MaxWidth="680"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -61,10 +62,16 @@
         </Storyboard>
     </Window.Resources>
 
-    <Grid>
-    <!-- 12px of margin rather than Photokompressor's 18: the shadow still has room to
-         fall, but the panel keeps more of the window. -->
-    <Border Margin="12" CornerRadius="16" Background="{StaticResource TrayBg}"
+    <!-- 1/255-alpha wash, not truly transparent: a layered window (AllowsTransparency)
+         lets clicks through any fully transparent pixel, which would make the resize
+         grips in the shadow margin dead. This keeps the whole window rect hittable while
+         staying invisible. -->
+    <Grid Background="#01000000">
+    <!-- 28px of transparent inset all round. The drop shadow blurs ~20px and drops 6px,
+         so anything tighter (the old 12) clipped the shadow against the window edge and
+         it read as a hard-cornered rectangle instead of a soft round-cornered glow.
+         ChromeMargin in the code-behind must match this. -->
+    <Border Margin="28" CornerRadius="16" Background="{StaticResource TrayBg}"
             MouseLeftButtonDown="OnChromeDrag">
         <Border.Effect>
             <DropShadowEffect Color="#243044" Direction="270" ShadowDepth="6" BlurRadius="20" Opacity="0.22"/>
@@ -415,13 +422,9 @@
         </Grid>
     </Border>
 
-    <!-- Vertical resize grips. WindowStyle="None" drops the OS's own resize edges along
-         with the rest of the chrome, so these hand off to the same native resize loop a
-         titled window gets — see ResizeFromEdge in the code-behind. They live in the 12px
-         margin above, so there's nothing to draw; the cursor is the only affordance. -->
-    <Border Height="8" VerticalAlignment="Top" Background="Transparent" Cursor="SizeNS"
-            MouseLeftButtonDown="OnResizeTop"/>
-    <Border Height="8" VerticalAlignment="Bottom" Background="Transparent" Cursor="SizeNS"
-            MouseLeftButtonDown="OnResizeBottom"/>
+    <!-- Resizing: the code-behind's WM_NCHITTEST hook reports the outer band of the window
+         as the OS resize edges/corners, so Windows runs its own resize loop. The band
+         covers the transparent shadow margin (kept hit-testable by the root Grid's 1/255
+         wash) plus a few DIPs onto the card - no on-screen grips needed. -->
     </Grid>
 </Window>

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -51,15 +50,18 @@ public partial class TrayWindow : Window
     }
 
     /// <summary>
-    /// Bottom-right of the work area, which is where the notification area is and so
-    /// where the eye already is after clicking the tray icon. WorkArea rather than screen
-    /// bounds, so it clears the taskbar wherever the taskbar happens to live.
+    /// Toward the bottom-right of the work area, near the notification area where the eye
+    /// already is after clicking the tray icon — but held off the corner by GrowGap so
+    /// there's room to drag the right and bottom edges outward (the only two that resize;
+    /// see WndProc). WorkArea rather than screen bounds, so it clears the taskbar.
     /// </summary>
+    private const double GrowGap = 150;
+
     public void PositionNearTray()
     {
         var work = SystemParameters.WorkArea;
-        Left = work.Right - Width - 8;
-        Top = work.Bottom - Height - 8;
+        Left = Math.Max(work.Left + 8, work.Right - Width - GrowGap);
+        Top = Math.Max(work.Top + 8, work.Bottom - Height - GrowGap);
     }
 
     public void ShowFromTray()
@@ -94,33 +96,51 @@ public partial class TrayWindow : Window
     /// <summary>Closing hides: this is a resident app, and the tray icon is the real window list.</summary>
     private void OnCloseClicked(object sender, RoutedEventArgs e) => Hide();
 
-    // ---- vertical resize ------------------------------------------------------------
+    // ---- resize from the right / bottom edge and the bottom-right corner ----------
 
-    [DllImport("user32.dll")]
-    private static extern int SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+    private const int WM_NCHITTEST = 0x0084;
+    private const int HTRIGHT = 11, HTBOTTOM = 15, HTBOTTOMRIGHT = 17;
 
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    private const int WM_SYSCOMMAND = 0x112;
-    private const int ScSizeTop = 0xF003;
-    private const int ScSizeBottom = 0xF006;
+    /// <summary>Grab band, in DIPs, in from the window's edge.</summary>
+    private const double ResizeBand = 34;
 
     /// <summary>
-    /// WindowStyle="None" drops the OS's own resize borders along with the rest of the
-    /// chrome, and there's no public WPF equivalent of DragMove() for resizing — so this
-    /// hands off to the same native resize loop a titled window gets, the same trick
-    /// DragMove() itself uses under the hood for moving.
+    /// WindowStyle="None" + AllowsTransparency drops the OS resize borders, so WM_NCHITTEST
+    /// puts them back: the outer band of the right and bottom edges (and the corner where
+    /// they meet) reports as a resize edge, and Windows runs its own resize loop from there.
+    ///
+    /// Only those two edges. This is a layered window, and the moment a resize moves the
+    /// window's top-left corner Windows aborts the drag after a pixel or two — so the left
+    /// and top edges can't be made to work here. The panel opens with room to grow down and
+    /// right (see PositionNearTray) so these two are enough. The band sits in the shadow
+    /// margin, which the root Grid's 1/255 wash keeps hit-testable.
     /// </summary>
-    private void ResizeFromEdge(int sizeCommand)
+    protected override void OnSourceInitialized(EventArgs e)
     {
-        ReleaseCapture();
-        SendMessage(new WindowInteropHelper(this).Handle, WM_SYSCOMMAND, sizeCommand, 0);
+        base.OnSourceInitialized(e);
+        ((HwndSource)PresentationSource.FromVisual(this)!).AddHook(WndProc);
     }
 
-    private void OnResizeTop(object sender, MouseButtonEventArgs e) => ResizeFromEdge(ScSizeTop);
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg != WM_NCHITTEST || WindowState != WindowState.Normal)
+            return IntPtr.Zero;
 
-    private void OnResizeBottom(object sender, MouseButtonEventArgs e) => ResizeFromEdge(ScSizeBottom);
+        int lp = lParam.ToInt32();
+        var dpi = VisualTreeHelper.GetDpi(this);
+        double x = (short)(lp & 0xFFFF) / dpi.DpiScaleX;   // screen point, DIPs
+        double y = (short)(lp >> 16) / dpi.DpiScaleY;
+
+        bool right = x > Left + ActualWidth - ResizeBand && x < Left + ActualWidth;
+        bool bottom = y > Top + ActualHeight - ResizeBand && y < Top + ActualHeight;
+
+        int hit = right && bottom ? HTBOTTOMRIGHT : right ? HTRIGHT : bottom ? HTBOTTOM : 0;
+        if (hit == 0)
+            return IntPtr.Zero;
+
+        handled = true;
+        return new IntPtr(hit);
+    }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
@@ -173,8 +193,8 @@ public partial class TrayWindow : Window
             heartbeat.Stop(this);
     }
 
-    /// <summary>The card Border's Margin="12" in TrayWindow.xaml — same inset on all four sides.</summary>
-    private const double ChromeMargin = 12;
+    /// <summary>The card Border's Margin="28" in TrayWindow.xaml — same inset on all four sides.</summary>
+    private const double ChromeMargin = 28;
 
     /// <summary>
     /// Grows (never shrinks) the window so the info panel's footer — the CTA and version
