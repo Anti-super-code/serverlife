@@ -28,6 +28,9 @@ Both apps work end to end.
 | Built-in static server, no tooling needed | ✅ Windows | ✅ macOS |
 | Auto-restart watchdog with backoff | ✅ Windows | ✅ macOS |
 | Adopt an externally started server | ✅ Windows | ✅ macOS |
+| Adopt a listener running from a managed server's own folder | ✅ Windows | ✅ macOS |
+| Full PATH for spawned servers (nvm / Volta / scoop / Homebrew installs) | ✅ Windows (`Environment` registry keys) | ✅ macOS (login shell) |
+| Inline rename of a managed row — double-click the name | ✅ Windows | ✅ macOS |
 | Right-click "Start server here" | ✅ Windows (Explorer verb) | ✅ macOS (Finder Quick Action) |
 | Single-instance folder handoff | ✅ Windows (mutex/pipe) | ✅ macOS (free — `LSMultipleInstancesProhibited`) |
 | Packaging (sha256 beside every artifact) | ✅ Windows — portable zip **and** an installer (`build/package.ps1`) | ✅ macOS — drag-to-Applications `.dmg` (`build/package-mac.sh`) |

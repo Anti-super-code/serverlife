@@ -60,6 +60,15 @@ public sealed partial class ServerRowItem : ObservableObject
     [ObservableProperty] private int _restartCount;
     [ObservableProperty] private ServerOrigin _origin = ServerOrigin.Unknown;
 
+    /// <summary>True while the row's name is being edited in place (double-click). Managed rows only.</summary>
+    [ObservableProperty] private bool _isEditingName;
+
+    /// <summary>The edit buffer bound to the inline rename field; committed via <c>TrayViewModel.Rename</c>.</summary>
+    [ObservableProperty] private string _nameDraft = "";
+
+    /// <summary>Only a managed row can be renamed — a discovered row's name comes back from discovery every poll.</summary>
+    public bool CanRename => IsManaged;
+
     /// <summary>The supervisor's record, when this row is managed. Null for external servers.</summary>
     internal ManagedServer? Managed { get; set; }
 

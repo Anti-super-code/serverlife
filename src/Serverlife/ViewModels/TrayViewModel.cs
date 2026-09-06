@@ -148,6 +148,13 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
             .GroupBy(s => s.Port!.Value)
             .ToDictionary(g => g.Key, g => g.First());
 
+        // Managed servers not yet tied to a port, keyed by their (canonicalised) folder —
+        // used below to adopt a listener discovered running out of that exact folder.
+        var unlinkedManagedByDir = new Dictionary<string, ManagedServer>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in _supervisor.Servers)
+            if (s.Port is null && CanonicalDir(s.Directory) is { Length: > 0 } dir)
+                unlinkedManagedByDir[dir] = s;
+
         // A managed server owns exactly one row for its whole life, whether or not it is
         // currently listening. Creating it here rather than from discovery is what stops
         // a server appearing twice — once as "the thing we manage" and again as "a port
@@ -171,6 +178,24 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
                 && _managedRows.TryGetValue(owner, out var ownerRow))
             {
                 ownerRow.Apply(server);
+                continue;
+            }
+
+            // A managed server we haven't tied to a port yet, with a listener running out
+            // of its exact folder: almost certainly the same server. Adopt the port so the
+            // row gets its URL and the watchdog can health-check by port instead of walking
+            // the process tree — "npm run dev" puts the socket on a grandchild the job
+            // check can miss, and this also covers a dev server started by hand from an
+            // editor in that folder. Only fires while the managed entry has no port, so it
+            // won't hijack an unrelated server.
+            if (CanonicalDir(server.WorkingDirectory) is { Length: > 0 } wd
+                && unlinkedManagedByDir.TryGetValue(wd, out var dirOwner)
+                && _managedRows.TryGetValue(dirOwner, out var dirOwnerRow))
+            {
+                dirOwner.Port = server.Port;
+                managedByPort[server.Port] = dirOwner;
+                unlinkedManagedByDir.Remove(wd);
+                dirOwnerRow.Apply(server);
                 continue;
             }
 
@@ -286,6 +311,45 @@ public sealed partial class TrayViewModel : ObservableObject, IDisposable
         if (row?.WorkingDirectory is not { Length: > 0 } dir || !Directory.Exists(dir))
             return;
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+    }
+
+    /// <summary>
+    /// Inline rename from the row (double-click the name). Managed rows only — a discovered
+    /// row's name is refreshed from discovery on every poll, so a rename there wouldn't
+    /// stick. Label only: the folder and command are left untouched.
+    /// </summary>
+    public void Rename(ServerRowItem? row, string? newName)
+    {
+        if (row is not { IsManaged: true, Managed: { } managed })
+            return;
+        var name = (newName ?? "").Trim();
+        if (name.Length == 0 || name == row.DisplayName)
+            return;
+        managed.Name = name;
+        row.DisplayName = name;
+    }
+
+    /// <summary>
+    /// Absolute, link-resolved, trailing-slash-trimmed path, so a managed server's folder
+    /// can be matched against a discovered process's working directory without tripping
+    /// over a trailing slash or a symlinked project dir. "" when the path is unusable.
+    /// </summary>
+    private static string CanonicalDir(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return "";
+        try
+        {
+            var full = Path.GetFullPath(path);
+            if (Directory.Exists(full)
+                && new DirectoryInfo(full).ResolveLinkTarget(returnFinalTarget: true) is { FullName: var target })
+                full = target;
+            return full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     /// <summary>

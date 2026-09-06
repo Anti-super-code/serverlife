@@ -27,7 +27,7 @@ public partial class TrayWindow : Window
         get
         {
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            return v == null ? "0.1" : $"{v.Major}.{v.Minor}";
+            return v == null ? "1.0.0" : $"{v.Major}.{v.Minor}.{v.Build}";
         }
     }
 
@@ -154,6 +154,62 @@ public partial class TrayWindow : Window
     {
         if (sender is RadioButton { Tag: string tag } && Enum.TryParse<RowFilter>(tag, out var filter))
             _model.Filter = filter;
+    }
+
+    // ---- inline rename of a managed row ------------------------------------------------
+
+    /// <summary>
+    /// Double-click a managed row's name to edit it in place. A discovered row is left
+    /// alone — its name is refreshed from discovery on every poll, so a rename wouldn't
+    /// stick.
+    /// </summary>
+    private void OnRowNameMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 2
+            || sender is not FrameworkElement { DataContext: ServerRowItem { IsManaged: true } row })
+            return;
+        row.NameDraft = row.DisplayName;
+        row.IsEditingName = true;
+        e.Handled = true;
+    }
+
+    /// <summary>Focus and select the field the instant it appears, so the rename is type-ready.</summary>
+    private void OnRenameEditorVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is TextBox { IsVisible: true } box)
+        {
+            box.Focus();
+            box.SelectAll();
+        }
+    }
+
+    private void OnRenameKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox { DataContext: ServerRowItem row })
+            return;
+        if (e.Key == Key.Enter)
+        {
+            CommitRename(row);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            row.IsEditingName = false;   // discard the draft
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Clicking away keeps the edit rather than losing it — commit on focus loss too.</summary>
+    private void OnRenameLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox { DataContext: ServerRowItem { IsEditingName: true } row })
+            CommitRename(row);
+    }
+
+    private void CommitRename(ServerRowItem row)
+    {
+        _model.Rename(row, row.NameDraft);
+        row.IsEditingName = false;
     }
 
     // ---- about & settings -----------------------------------------------------------

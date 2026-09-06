@@ -22,8 +22,8 @@
     <Copyright>Copyright (c) 2026 Christopher Brellis</Copyright>
     <Description>See every local dev server, start and stop them, and keep them alive while you present.</Description>
     <!-- Kept in step with VERSION in build/package-mac.sh by hand. -->
-    <Version>0.1.4</Version>
-    <InformationalVersion>0.1.4</InformationalVersion>
+    <Version>1.0.0</Version>
+    <InformationalVersion>1.0.0</InformationalVersion>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
     <!-- WFAC010: the WinForms analyzer objects to DPI settings in the manifest, but
          WPF is the real UI stack here and reads them from the manifest. -->

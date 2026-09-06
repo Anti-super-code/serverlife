@@ -191,6 +191,13 @@ public sealed class Supervisor : IDisposable
             RedirectStandardError = true,
         };
 
+        // A GUI app keeps the PATH it was launched with, so a Node that was installed (or
+        // a version manager that re-pointed) since the last sign-in isn't on it and
+        // "npm run dev" dies with "is not recognized". Hand the child the PATH a fresh
+        // logon would have instead. info.Environment is pre-seeded with our own block, so
+        // this replaces just the one entry.
+        info.Environment["Path"] = EnvironmentPath.Value;
+
         var process = Process.Start(info)
             ?? throw new InvalidOperationException("Process.Start returned no process.");
 

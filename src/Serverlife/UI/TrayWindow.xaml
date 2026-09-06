@@ -21,6 +21,7 @@
 
     <Window.Resources>
         <local:StateToBrushConverter x:Key="StateBrush"/>
+        <local:InverseBoolToVisibilityConverter x:Key="InvBoolToVis"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
         <!-- A lub-dub-rest cycle rather than a plain pulse: two quick beats close
@@ -173,9 +174,30 @@
                                                    MinWidth="38" Margin="0,0,8,0"
                                                    Foreground="{StaticResource TextMid}" VerticalAlignment="Center"/>
 
-                                        <TextBlock Grid.Column="2" Text="{Binding DisplayName}" FontSize="12.5"
-                                                   Foreground="{StaticResource TextHi}" VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                        <!-- Static label, or an inline editor once a managed row's
+                                             name is double-clicked. The editor commits on Enter or
+                                             focus loss and discards on Esc (see TrayWindow.xaml.cs);
+                                             a discovered row ignores the double-click since its name
+                                             is refreshed from discovery every poll. -->
+                                        <Grid Grid.Column="2" VerticalAlignment="Center">
+                                            <!-- Transparent, not null, background so the whole label
+                                                 rect takes the double-click, not just the glyphs. -->
+                                            <TextBlock Text="{Binding DisplayName}" FontSize="12.5"
+                                                       Background="Transparent"
+                                                       Foreground="{StaticResource TextHi}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Visibility="{Binding IsEditingName, Converter={StaticResource InvBoolToVis}}"
+                                                       MouseLeftButtonDown="OnRowNameMouseDown"/>
+                                            <TextBox FontSize="12.5" Padding="2,0" BorderThickness="0"
+                                                     Background="#22000000" Foreground="{StaticResource TextHi}"
+                                                     CaretBrush="{StaticResource TextHi}"
+                                                     VerticalContentAlignment="Center"
+                                                     Visibility="{Binding IsEditingName, Converter={StaticResource BoolToVis}}"
+                                                     Text="{Binding NameDraft, UpdateSourceTrigger=PropertyChanged}"
+                                                     KeyDown="OnRenameKeyDown"
+                                                     LostKeyboardFocus="OnRenameLostFocus"
+                                                     IsVisibleChanged="OnRenameEditorVisibleChanged"/>
+                                        </Grid>
 
                                         <!-- Contested ports are the finding this app exists to
                                              surface, so the badges show at rest, not on hover. -->
